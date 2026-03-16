@@ -1,0 +1,7 @@
+env工具路径
+版本号V2.0.0
+D:\rtt_v5\env-windows-v2.0.0\env-windows
+默认右键ConEmu here 是老版本的，不支持rt-thread-V5版本
+在命令行输入
+cd D:\rtt_v5\rt-thread-5.2.2\rt-thread\bsp\stm32\stm32f407VE-irobot 
+切换到工程目录中

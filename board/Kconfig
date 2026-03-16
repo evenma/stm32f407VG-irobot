@@ -1,0 +1,377 @@
+menu "Hardware Drivers Config"
+
+config SOC_STM32F407VG
+    bool
+    select SOC_SERIES_STM32F4
+    select RT_USING_COMPONENTS_INIT
+    select RT_USING_USER_MAIN
+    default y
+
+menu "Onboard Peripheral Drivers"
+    config BSP_USING_USB_TO_USART
+        bool "Enable USB TO USART (uart1)"
+        select BSP_USING_UART
+        select BSP_USING_UART1
+        default y
+		help
+            UART1 is used for debugging via USB-to-serial.
+		
+    config BSP_USING_UART2_CTRL
+        bool "Enable USB TO USART (uart2)"
+        select BSP_USING_UART
+        select BSP_USING_UART2
+        default y
+		help
+            UART2 communicates with the host PC for command reception and data transmission.
+
+    menuconfig BSP_USING_RS485
+        bool "Enable UART4 for RS485 bus"
+        select BSP_USING_UART
+        select BSP_USING_UART4
+        default y
+        if BSP_USING_RS485
+            config BSP_UART4_485_RE_PIN
+                int "RS485 RE/DE control pin number (PD0 = 48)"
+                range 0 143
+                default 48
+                help
+                    Pin number for controlling RS485 transceiver direction.
+                    High level enables transmission, low level enables reception.
+                    PD0 corresponds to pin number 48 (port D, pin 0).
+
+        endif
+
+	menuconfig BSP_USING_UART5_BT
+			bool "Enable UART5 for Bluetooth module (DX2002)"
+			select BSP_USING_UART
+			select BSP_USING_UART5
+			default y
+			if BSP_USING_UART5_BT
+				 config BSP_UART5_BT_RST_PIN
+					int "Bluetooth module reset pin number (PD1 = 49, -1 if unused)"
+					range -1 143
+					default 49
+					help
+						Pin number to control Bluetooth module reset (active low).
+						Set to -1 if reset control is not needed.		
+			endif
+
+    config BSP_USING_LVGL
+        bool "Enable LVGL for LCD"
+        select BSP_USING_OLED
+        select PKG_USING_LVGL
+        default n
+
+    if BSP_USING_LVGL
+        config BSP_USING_LVGL_DEMO
+            bool "Enable LVGL demo"
+            select PKG_LVGL_USING_DEMOS
+            default y
+    endif
+
+    config BSP_USING_OLED
+        bool "Enable OLED display (HS96L01W4S03)"
+        default n
+        depends on BSP_USING_SPI2
+        select RT_USING_SPI
+        if BSP_USING_OLED
+            config BSP_OLED_SPI_BUS
+                string "OLED SPI bus name"
+                default "spi2"
+                help
+                    Specify the SPI bus used for OLED communication (e.g., spi2).
+
+            config BSP_OLED_DC_PIN
+                int "OLED DC pin number (PB14 = 30)"
+                range 0 143
+                default 30
+                help
+                    Pin number for Data/Command control. High for data, low for command.
+                    PB14 corresponds to pin 30 (port B, pin 14).
+
+            config BSP_OLED_CS_PIN
+                int "OLED CS pin number (SPI2 NSS = PB12 = 28)"
+                range 0 143
+                default 28
+                help
+                    Pin number for chip select (active low). Your hardware connects SPI_NSS (PB12)
+                    to OLED_CS, so default is PB12 = 28. If you prefer software CS, keep this;
+                    if using hardware NSS, set to -1 and configure SPI accordingly.
+        endif	   
+			
+endmenu
+
+menu "On-chip Peripheral Drivers"
+
+    config BSP_USING_GPIO
+        bool "Enable GPIO"
+        select RT_USING_PIN
+        default y
+		
+	config BSP_USING_ON_CHIP_FLASH
+        bool "Enable on-chip FLASH"
+        default n 	
+		
+    menuconfig BSP_USING_UART
+        bool "Enable UART"
+        default y
+        select RT_USING_SERIAL
+        if BSP_USING_UART
+            config BSP_STM32_UART_V1_TX_TIMEOUT
+                int "UART TX timeout"
+                default 2000
+                depends on RT_USING_SERIAL_V1
+                				
+			menuconfig BSP_USING_UART1
+                bool "Enable UART1"
+                default y
+                if BSP_USING_UART1
+                    config BSP_UART1_RX_USING_DMA
+                        bool "Enable UART1 RX DMA"
+                        depends on BSP_USING_UART1 && RT_SERIAL_USING_DMA
+                        default y
+
+                    config BSP_UART1_TX_USING_DMA
+                        bool "Enable UART1 TX DMA"
+                        depends on BSP_USING_UART1 && RT_SERIAL_USING_DMA
+                        default y
+
+                    config BSP_UART1_RX_BUFSIZE
+                        int "Set UART1 RX buffer size"
+                        range 64 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 256
+
+                    config BSP_UART1_TX_BUFSIZE
+                        int "Set UART1 TX buffer size"
+                        range 0 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 256
+
+                    config BSP_UART1_DMA_PING_BUFSIZE
+                        int "Set UART1 RX DMA ping-pong buffer size"
+                        range 32 65535
+                        depends on RT_USING_SERIAL_V2 && BSP_UART1_RX_USING_DMA
+                        default 64    
+                endif	
+				
+			menuconfig BSP_USING_UART2
+                bool "Enable UART2"
+                default y
+                if BSP_USING_UART2
+                    config BSP_UART2_RX_USING_DMA
+                        bool "Enable UART2 RX DMA"
+                        depends on BSP_USING_UART2 && RT_SERIAL_USING_DMA
+                        default y
+
+                    config BSP_UART2_TX_USING_DMA
+                        bool "Enable UART2 TX DMA"
+                        depends on BSP_USING_UART2 && RT_SERIAL_USING_DMA
+                        default y
+
+                    config BSP_UART2_RX_BUFSIZE
+                        int "Set UART2 RX buffer size"
+                        range 64 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 1024
+
+                    config BSP_UART2_TX_BUFSIZE
+                        int "Set UART2 TX buffer size"
+                        range 0 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 1024
+
+                    config BSP_UART2_DMA_PING_BUFSIZE
+                        int "Set UART2 RX DMA ping-pong buffer size"
+                        range 32 65535
+                        depends on RT_USING_SERIAL_V2 && BSP_UART2_RX_USING_DMA
+                        default 256                        
+                endif
+			
+			menuconfig BSP_USING_UART4
+                bool "Enable UART4"
+                default y
+                if BSP_USING_UART4
+                    config BSP_UART4_RX_USING_DMA
+                        bool "Enable UART4 RX DMA"
+                        depends on BSP_USING_UART4 && RT_SERIAL_USING_DMA
+                        default n
+
+                    config BSP_UART4_TX_USING_DMA
+                        bool "Enable UART4 TX DMA"
+                        depends on BSP_USING_UART4 && RT_SERIAL_USING_DMA
+                        default n
+
+                    config BSP_UART4_RX_BUFSIZE
+                        int "Set UART4 RX buffer size"
+                        range 64 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 256
+
+                    config BSP_UART4_TX_BUFSIZE
+                        int "Set UART4 TX buffer size"
+                        range 0 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 256
+
+                    config BSP_UART4_DMA_PING_BUFSIZE
+                        int "Set UART4 RX DMA ping-pong buffer size"
+                        range 32 65535
+                        depends on RT_USING_SERIAL_V2 && BSP_UART4_RX_USING_DMA
+                        default 64                        
+                endif
+				
+            menuconfig BSP_USING_UART5
+                bool "Enable UART5"
+                default y
+                if BSP_USING_UART5
+                    config BSP_UART5_RX_USING_DMA
+                        bool "Enable UART5 RX DMA"
+                        depends on BSP_USING_UART5 && RT_SERIAL_USING_DMA
+                        default n
+
+                    config BSP_UART5_TX_USING_DMA
+                        bool "Enable UART5 TX DMA"
+                        depends on BSP_USING_UART5 && RT_SERIAL_USING_DMA
+                        default n
+
+                    config BSP_UART5_RX_BUFSIZE
+                        int "Set UART5 RX buffer size"
+                        range 64 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 256
+
+                    config BSP_UART5_TX_BUFSIZE
+                        int "Set UART5 TX buffer size"
+                        range 0 65535
+                        depends on RT_USING_SERIAL_V2
+                        default 0
+
+                    config BSP_UART5_DMA_PING_BUFSIZE
+                        int "Set UART5 RX DMA ping-pong buffer size"
+                        range 32 65535
+                        depends on RT_USING_SERIAL_V2 && BSP_UART5_RX_USING_DMA
+                        default 64                        
+                endif				
+        endif
+
+	menuconfig BSP_USING_CAN
+        bool "Enable CAN"
+        default y
+        select RT_USING_CAN
+        if BSP_USING_CAN
+            config BSP_CAN_USING_HDR
+                bool "Enable CAN using hdr"
+				select RT_CAN_USING_HDR
+                default y	
+			config BSP_USING_CAN1
+				bool "Enable CAN1"
+				default y
+        endif
+
+    menuconfig BSP_USING_SPI
+        bool "Enable SPI BUS"
+        default y
+        select RT_USING_SPI
+        if BSP_USING_SPI
+            config BSP_USING_SPI2
+                bool "Enable SPI2 BUS"
+                default y
+				
+			config BSP_SPI2_TX_USING_DMA
+                bool "Enable SPI2 TX DMA"
+                depends on BSP_USING_SPI2
+                default n
+        endif
+		
+	menuconfig BSP_USING_TIM
+        bool "Enable timer"
+        default y
+        select RT_USING_HWTIMER
+        if BSP_USING_TIM
+            config BSP_USING_TIM3
+                bool "Enable TIM3"
+                default y
+			config BSP_USING_TIM5     
+				bool "Enable TIM5"
+				default y
+        endif
+
+	menuconfig BSP_USING_PWM
+        bool "Enable PWM"
+        default y
+        select RT_USING_PWM
+        if BSP_USING_PWM
+			menuconfig BSP_USING_PWM5
+				bool "Enable timer5 output PWM"
+				depends on BSP_USING_TIM5 
+				default y
+				if BSP_USING_PWM5
+					config BSP_USING_PWM5_CH1
+						bool "Enable PWM5 channel1"
+						default y
+					config BSP_USING_PWM5_CH2
+						bool "Enable PWM5 channel2"
+						default y					
+				endif
+        endif
+
+    menuconfig BSP_USING_ADC
+        bool "Enable ADC"
+        default y
+        select RT_USING_ADC
+        if BSP_USING_ADC
+            config BSP_USING_ADC1
+                bool "Enable ADC1"
+                default y
+        endif
+		
+    config BSP_USING_WDT
+        bool "Enable Watchdog Timer"
+        select RT_USING_WDT
+        default y
+		
+	menuconfig BSP_USING_I2C
+		bool "Enable I2C BUS (Hardware)"
+		default y
+		select RT_USING_I2C
+		select STM32F4_HAL_I2C
+		if BSP_USING_I2C
+			 config BSP_USING_I2C1
+				bool "Enable I2C1 BUS"
+				default y
+				if BSP_USING_I2C1
+                    config BSP_I2C1_SCL_PIN
+                        int "i2c1 scl pin number,PB6=22"
+                        range 0 143
+                        default 22
+                    config BSP_I2C1_SDA_PIN
+                        int "I2C1 sda pin number,PB7=23"
+                        range 0 143
+                        default 23
+                endif
+				
+            config BSP_USING_I2C2
+                bool "Enable I2C2 BUS"
+                default y
+				if BSP_USING_I2C2
+                    config BSP_I2C2_SCL_PIN
+                        int "i2c2 scl pin number, PB10=26"
+                        range 0 143
+                        default 26
+                    config BSP_I2C2_SDA_PIN
+                        int "I2C2 sda pin number, PB11=27"
+                        range 0 143
+                        default 27
+                endif
+		endif	
+		
+    source "$(BSP_DIR)/../libraries/HAL_Drivers/drivers/Kconfig"
+
+endmenu
+
+menu "Board extended module Drivers"
+
+endmenu
+
+endmenu

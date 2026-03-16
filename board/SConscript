@@ -1,0 +1,32 @@
+import os
+from building import *
+
+cwd = GetCurrentDir()
+
+# add general drivers
+src = Split('''
+board.c
+CubeMX_Config/Src/stm32f4xx_hal_msp.c
+''')
+#CubeMX_Config/MDK-ARM/startup_stm32f407xx.s  此文件在packages\stm32f4_cmsis_driver-latest\Source\Templates\arm中，是pkgs --update下载过来
+path =  [cwd]
+path += [os.path.join(cwd, 'CubeMX_Config', 'Inc')]
+path += [os.path.join(cwd, 'ports')]
+
+
+# STM32F405xx) || STM32F415xx) || STM32F407xx) || STM32F417xx)
+# STM32F427xx) || STM32F437xx) || STM32F429xx) || STM32F439xx)
+# STM32F401xC) || STM32F401xE) || STM32F410Tx) || STM32F410Cx)
+# STM32F410Rx) || STM32F411xE) || STM32F446xx) || STM32F469xx)
+# STM32F479xx) || STM32F412Cx) || STM32F412Rx) || STM32F412Vx)
+# STM32F412Zx) || STM32F413xx) || STM32F423xx)
+# You can select chips from the list above
+CPPDEFINES = ['STM32F407xx']
+group = DefineGroup('Drivers', src, depend = [''], CPPPATH = path, CPPDEFINES = CPPDEFINES)
+
+list = os.listdir(cwd)
+for item in list:
+    if os.path.isfile(os.path.join(cwd, item, 'SConscript')):
+        group = group + SConscript(os.path.join(item, 'SConscript'))
+
+Return('group')
