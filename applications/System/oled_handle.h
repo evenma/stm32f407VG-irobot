@@ -3,13 +3,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * @brief OLED Display Handle - System Service Layer
+ * @brief OLED Display Handle - System Service Layer v1.1.4
  * 
  * Function:
  *   1. Multi-page management (boot page, home page, settings page, etc.)
  *   2. SW3/SW4 polling switch (without external interrupt)
  *   3. Mutual exclusion protection with LED SPI resource
  *   4. Timed refresh + semaphore-triggered refresh
+ *   5. MSH console test commands for rapid debugging
  */
 
 #ifndef SYSTEM_OLED_HANDLE_H__
@@ -54,7 +55,7 @@ typedef struct
 {
     OledPageId_t id;                // Page ID
     const char* title;              // Page title (displayed in top bar)
-    void (*render_func)(void);      // Page render function pointer
+    void (*render)(void);           // Page render function pointer
     uint8_t refresh_interval_ms;    // Auto refresh interval (0=disabled)
 } OledPage_t;
 
@@ -211,27 +212,40 @@ void oled_spi_lock(void);
 void oled_spi_unlock(void);
 
 
-/* ========== MSH Console Test Commands ========== */
+/* ============================================ */
+/*        MSH Console Test Commands API       */
+/* ============================================ */
+/* 
+ * These commands are exported via MSH_CMD_EXPORT_ALIAS macro
+ * Available in msh console after oled initialization
+ */
 
 /**
- * @brief Force screen refresh (for testing)
+ * @brief MSH command: oled_test [page_id]
+ * Usage: Show OLED info or switch to specific page (0-10)
+ *   page_id: 0=boot, 1=home, 2=pid, 3=ultrasonic, 4=ir, 5=battery, 
+ *            6=water, 7=motor, 8=imu, 9=fault, 10=settings
  */
-extern void oled_force_refresh(void);
+extern void oled_test(int argc, char *argv[]);
 
 /**
- * @brief OLED test command - display control and page switching
+ * @brief MSH command: oled_refresh
+ * Usage: Force immediate screen refresh
  */
-extern void oled_test_impl(int argc, char *argv[]);
+extern void oled_refresh_cmd(int argc, char *argv[]);
 
 /**
- * @brief OLED status command - show current state
+ * @brief MSH command: oled_status
+ * Usage: Display current OLED status information
  */
-extern void oled_status_cmd(int argc, char *argv[]);
+extern void oled_status(int argc, char *argv[]);
 
 /**
- * @brief OLED cycle command - navigate through pages
+ * @brief MSH command: oled_cycle [count]
+ * Usage: Cycle through N consecutive pages (default: 3)
+ *   count: number of pages to cycle through (1-11)
  */
-extern void oled_cycle_cmd(int argc, char *argv[]);
+extern void oled_cycle(int argc, char *argv[]);
 
 
 #endif /* SYSTEM_OLED_HANDLE_H__ */
