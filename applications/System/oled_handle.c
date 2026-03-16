@@ -666,6 +666,14 @@ static void render_settings_page(u8g2_t* u8g2)
  */
 MSH_CMD_EXPORT_ALIAS(oled_test_cmd, oled_test, OLED Display Control Test (v1.1.2));
 
+/**
+ * @brief Actual implementation of oled_test command
+ */
+void oled_test_cmd(int argc, char *argv[])
+{
+    oled_test_impl(argc, argv);
+}
+
 void oled_test_impl(int argc, char *argv[])
 {
     int page_id = -1;
@@ -723,7 +731,9 @@ void oled_test_impl(int argc, char *argv[])
  * @brief MSH command to force refresh current page
  * Usage: oled_refresh
  */
-void oled_force_refresh_cmd(int argc, char *argv[])
+MSH_CMD_EXPORT_ALIAS(oled_force_refresh, oled_refresh, OLED Force Screen Refresh);
+
+void oled_force_refresh_impl(int argc, char *argv[])
 {
     rt_kprintf("[OLED] Forcing screen refresh...\r\n");
     oled_force_refresh();
@@ -731,10 +741,20 @@ void oled_force_refresh_cmd(int argc, char *argv[])
 }
 
 /**
+ * @brief Actual wrapper function
+ */
+void oled_force_refresh_cmd(int argc, char *argv[])
+{
+    oled_force_refresh_impl(argc, argv);
+}
+
+/**
  * @brief MSH command to show OLED status
  * Usage: oled_status
  */
-void oled_status_cmd(int argc, char *argv[])
+MSH_CMD_EXPORT_ALIAS(oled_show_status, oled_status, OLED Show Status Information);
+
+void oled_status_impl(int argc, char *argv[])
 {
     OledPageId_t page = oled_get_current_page();
     
@@ -764,11 +784,21 @@ void oled_status_cmd(int argc, char *argv[])
 }
 
 /**
+ * @brief Actual wrapper function
+ */
+void oled_status_cmd(int argc, char *argv[])
+{
+    oled_status_impl(argc, argv);
+}
+
+/**
  * @brief MSH command to cycle through all pages
  * Usage: oled_cycle [count]
  *   count: number of pages to cycle (default: 3)
  */
-void oled_cycle_cmd(int argc, char *argv[])
+MSH_CMD_EXPORT_ALIAS(oled_cycle_pages, oled_cycle, OLED Cycle Through Pages);
+
+void oled_cycle_impl(int argc, char *argv[])
 {
     int cycles = 3;
     
@@ -790,4 +820,12 @@ void oled_cycle_cmd(int argc, char *argv[])
     }
     
     rt_kprintf("[OLED] Cycle complete!\r\n");
+}
+
+/**
+ * @brief Actual wrapper function
+ */
+void oled_cycle_cmd(int argc, char *argv[])
+{
+    oled_cycle_impl(argc, argv);
 }
