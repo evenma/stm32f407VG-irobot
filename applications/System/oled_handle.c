@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * @brief OLED display handle implementation v1.0.9
+ * @brief OLED display handle implementation v1.1.0
  * 
  * Function description:
- *   1. Use u8g2 library to drive SSD1306 OLED
+ *   1. Use u8g2 library with SPI2 driver for SSD1306 OLED
  *   2. Multi-page management and switching (11 pages)
  *   3. SW3/SW4 polling detection (non-interrupt method)
  *   4. Mutual exclusion protection for SPI resources shared with LED
@@ -324,19 +324,22 @@ static void oled_gpio_init(void)
 
 
 /**
- * @brief Initialize u8g2 display object
+ * @brief Initialize u8g2 display object (SPI2 DRIVER v1.1.1)
+ * NOTE: RESET pin set to U8X8_PIN_NONE (255) because OLED_RST_PIN removed from global_conf.h
  */
 static void u8g2_init(void)
 {
     rt_kprintf("OLED display\r\n");
     
-    // 1. Up init with SPI2 driver (CRITICAL!)
-    u8g2_Setup_ssd1306_128x64_noname_f( &s_u8g2, U8G2_R0, u8x8_byte_rtthread_4wire_hw_spi, u8x8_gpio_and_delay_rtthread);
+    // 1. Initialize with SPI2 driver (CRITICAL!)
+    u8g2_Setup_ssd1306_128x64_noname_f( &s_u8g2, U8G2_R0, 
+        u8x8_byte_rtthread_4wire_hw_spi, u8x8_gpio_and_delay_rtthread);
     
-    // Set SPI pins for CS, DC, RESET
+    // Set SPI pins for CS, DC
+    // RESET set to U8X8_PIN_NONE (255) = no software reset control
     u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_CS, OLED_CS_PIN);
     u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_DC, OLED_DC_PIN);
-    u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_RESET, OLED_RST_PIN);
+    u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_RESET, U8X8_PIN_NONE);  // Hardware reset not needed
     
     // 2. Power-on delay - CRITICAL FOR OLED STABILITY!
     rt_thread_mdelay(10);  
@@ -385,7 +388,7 @@ void oled_update_task(void* parameter)
 
 
 /**
- * ========== Page Renderers (v1.1.0 - Full Display Content Restored) ==========
+ * ========== Page Renderers (v1.1.1 - Full Display Content Restored) ==========
  */
 
 static void render_boot_page(u8g2_t* u8g2)
