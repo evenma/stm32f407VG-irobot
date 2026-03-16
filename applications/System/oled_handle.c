@@ -29,6 +29,11 @@
 int g_oled_battery_mv = 24000;
 
 /**
+ * @brief OLED update task handle (extern declaration for MSH commands)
+ */
+rt_thread_t s_oled_thread;
+
+/**
  * @brief U8g2 display object
  */
 static u8g2_t s_u8g2;
@@ -324,8 +329,9 @@ static void oled_gpio_init(void)
 
 
 /**
- * @brief Initialize u8g2 display object (SPI2 DRIVER v1.1.1)
- * NOTE: RESET pin set to U8X8_PIN_NONE (255) because OLED_RST_PIN removed from global_conf.h
+ * @brief Initialize u8g2 display object (SPI2 DRIVER v1.1.2)
+ * NOTE: Two-stage init - first call enables SPI2, second call does actual display init
+ *       RESET pin set to U8X8_PIN_NONE (255) because OLED_RST_PIN removed from global_conf.h
  */
 static void u8g2_init(void)
 {
@@ -341,10 +347,18 @@ static void u8g2_init(void)
     u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_DC, OLED_DC_PIN);
     u8x8_SetPin(u8g2_GetU8x8(&s_u8g2), U8X8_PIN_RESET, U8X8_PIN_NONE);  // Hardware reset not needed
     
+    // First u8g2_InitDisplay() call - ENABLES SPI2 BUS if not already enabled
+    rt_kprintf("[OLED] Stage 1: Enabling SPI2 bus...\r\n");
+    u8g2_InitDisplay(&s_u8g2);
+    
     // 2. Power-on delay - CRITICAL FOR OLED STABILITY!
     rt_thread_mdelay(10);  
     
+    // Second u8g2_InitDisplay() call - ACTUAL DISPLAY INITIALIZATION
+    rt_kprintf("[OLED] Stage 2: Initializing display...\r\n");
     u8g2_InitDisplay(&s_u8g2);
+    
+    rt_kprintf("[OLED] Display initialized successfully!\r\n");
     u8g2_ClearDisplay(&s_u8g2);
     u8g2_SetPowerSave(&s_u8g2, 0);
 }
@@ -637,4 +651,143 @@ static void render_settings_page(u8g2_t* u8g2)
     u8g2_DrawStr(u8g2, 8, y, "Firmware: v1.0.2");
     y += 12;
     u8g2_DrawStr(u8g2, 8, y, "Build: 2026-03-16");
+}
+
+
+/**
+ * ========== MSH Console Commands for Testing ==========
+ */
+
+/**
+ * @brief MSH command to test OLED initialization and display control
+ * Usage: oled_test [page_id]
+ *   page_id: 0=boot, 1=home, 2=pid, 3=ultrasonic, 4=ir, 5=battery, 
+ *            6=water, 7=motor, 8=imu, 9=fault, 10=settings
+ */
+MSH_CMD_EXPORT_ALIAS(oled_test_cmd, oled_test, OLED Display Control Test (v1.1.2));
+
+void oled_test_impl(int argc, char *argv[])
+{
+    int page_id = -1;
+    
+    if (argc > 1)
+    {
+        page_id = rt_strtol(argv[1], NULL, 10);
+        if (page_id < 0 || page_id >= PAGE_COUNT)
+        {
+            rt_kprintf("[OLED] Invalid page ID! Use 0-%d\r\n", PAGE_COUNT - 1);
+            return;
+        }
+    }
+    
+    rt_kprintf("[OLED] ===========================================\r\n");
+    rt_kprintf("[OLED] OLED Display Control Test (v1.1.2)\r\n");
+    rt_kprintf("[OLED] ===========================================\r\n");
+    rt_kprintf("[OLED] Page count: %d\r\n", PAGE_COUNT);
+    
+    if (page_id >= 0)
+    {
+        rt_kprintf("[OLED] Switching to page %d...\r\n", page_id);
+        
+        switch (page_id)
+        {
+            case PAGE_BOOT:      rt_kprintf("[OLED] Page 0: Boot Logo + Progress Bar\r\n");       break;
+            case PAGE_HOME:      rt_kprintf("[OLED] Page 1: Main Menu + Battery Info\r\n");   break;
+            case PAGE_PID_TUNING: rt_kprintf("[OLED] Page 2: PID Tuning Interface\r\n");     break;
+            case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page 3: Ultrasonic Sensor Data\r\n");    break;
+            case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page 4: IR Cliff Sensors\r\n");          break;
+            case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page 5: Detailed Battery Status\r\n"); break;
+            case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page 6: Water Tank Level\r\n");         break;
+            case PAGE_MOTOR_STATUS: rt_kprintf("[OLED] Page 7: Motor RPM and Steppers\r\n");  break;
+            case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page 8: IMU Pitch/Roll/Yaw\r\n");        break;
+            case PAGE_FAULT_LOG:  rt_kprintf("[OLED] Page 9: System Fault Log\r\n");         break;
+            case PAGE_SETTINGS:   rt_kprintf("[OLED] Page 10: System Settings Menu\r\n");     break;
+            default:              rt_kprintf("[OLED] Unknown page!\r\n");                      break;
+        }
+        
+        oled_switch_page((OledPageId_t)page_id);
+        rt_kprintf("[OLED] Page switched to %d\r\n", page_id);
+    }
+    
+    rt_kprintf("[OLED] ===========================================\r\n");
+    rt_kprintf("[OLED] Available commands:\r\n");
+    rt_kprintf("[OLED]   oled_test         - Show info and boot page\r\n");
+    rt_kprintf("[OLED]   oled_test 1       - Switch to home page\r\n");
+    rt_kprintf("[OLED]   oled_test 5       - Switch to battery page\r\n");
+    rt_kprintf("[OLED]   oled_refresh      - Force refresh current page\r\n");
+    rt_kprintf("[OLED]   oled_status       - Show OLED status\r\n");
+    rt_kprintf("[OLED] ===========================================\r\n");
+}
+
+/**
+ * @brief MSH command to force refresh current page
+ * Usage: oled_refresh
+ */
+void oled_force_refresh_cmd(int argc, char *argv[])
+{
+    rt_kprintf("[OLED] Forcing screen refresh...\r\n");
+    oled_force_refresh();
+    rt_kprintf("[OLED] Refresh complete!\r\n");
+}
+
+/**
+ * @brief MSH command to show OLED status
+ * Usage: oled_status
+ */
+void oled_status_cmd(int argc, char *argv[])
+{
+    OledPageId_t page = oled_get_current_page();
+    
+    rt_kprintf("[OLED] OLED Status Information\r\n");
+    rt_kprintf("[OLED] =========================\r\n");
+    rt_kprintf("[OLED] Current page: ");
+    
+    switch (page)
+    {
+        case PAGE_BOOT:      rt_kprintf("0 (Boot)\r\n");       break;
+        case PAGE_HOME:      rt_kprintf("1 (Home)\r\n");      break;
+        case PAGE_PID_TUNING:rt_kprintf("2 (PID Tuning)\r\n");break;
+        case PAGE_ULTRASONIC:rt_kprintf("3 (Ultrasonic)\r\n");break;
+        case PAGE_IR_SENSOR: rt_kprintf("4 (IR Sensors)\r\n");break;
+        case PAGE_BATTERY_INFO: rt_kprintf("5 (Battery)\r\n");break;
+        case PAGE_WATER_LEVEL: rt_kprintf("6 (Water Level)\r\n");break;
+        case PAGE_MOTOR_STATUS: rt_kprintf("7 (Motor Status)\r\n");break;
+        case PAGE_IMU_DATA:   rt_kprintf("8 (IMU Data)\r\n"); break;
+        case PAGE_FAULT_LOG:  rt_kprintf("9 (Fault Log)\r\n");break;
+        case PAGE_SETTINGS:   rt_kprintf("10 (Settings)\r\n");break;
+        default:              rt_kprintf("Unknown (%d)\r\n", page); break;
+    }
+    
+    rt_kprintf("[OLED] Total pages: %d\r\n", s_page_count);
+    rt_kprintf("[OLED] Battery voltage: %d mV\r\n", g_oled_battery_mv);
+    rt_kprintf("[OLED] OLED initialized: Yes\r\n");
+}
+
+/**
+ * @brief MSH command to cycle through all pages
+ * Usage: oled_cycle [count]
+ *   count: number of pages to cycle (default: 3)
+ */
+void oled_cycle_cmd(int argc, char *argv[])
+{
+    int cycles = 3;
+    
+    if (argc > 1)
+    {
+        cycles = rt_strtol(argv[1], NULL, 10);
+        if (cycles < 1) cycles = 1;
+        if (cycles > PAGE_COUNT) cycles = PAGE_COUNT;
+    }
+    
+    rt_kprintf("[OLED] Cycling through %d pages...\r\n", cycles);
+    
+    for (int i = 0; i < cycles; i++)
+    {
+        OledPageId_t next_page = (s_current_page + 1) % PAGE_COUNT;
+        rt_kprintf("[OLED] Switching from %d -> %d\r\n", s_current_page, next_page);
+        oled_switch_page(next_page);
+        rt_thread_mdelay(500);  // Give OLED time to update
+    }
+    
+    rt_kprintf("[OLED] Cycle complete!\r\n");
 }

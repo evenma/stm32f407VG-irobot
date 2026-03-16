@@ -188,6 +188,7 @@ void oled_draw_icon(uint8_t x, uint8_t y, uint8_t icon_id);
  */
 
 extern int g_oled_battery_mv;    // Current battery voltage (mV)
+extern rt_thread_t s_oled_thread;   // OLED update task handle
 
 
 /**
@@ -208,6 +209,29 @@ void oled_spi_lock(void);
  * @note Corresponding unlock must be called after completing SPI operation
  */
 void oled_spi_unlock(void);
+
+
+/* ========== MSH Console Test Commands ========== */
+
+/**
+ * @brief Force screen refresh (for testing)
+ */
+extern void oled_force_refresh(void);
+
+/**
+ * @brief OLED test command - display control and page switching
+ */
+extern void oled_test_impl(int argc, char *argv[]);
+
+/**
+ * @brief OLED status command - show current state
+ */
+extern void oled_status_cmd(int argc, char *argv[]);
+
+/**
+ * @brief OLED cycle command - navigate through pages
+ */
+extern void oled_cycle_cmd(int argc, char *argv[]);
 
 
 #endif /* SYSTEM_OLED_HANDLE_H__ */
