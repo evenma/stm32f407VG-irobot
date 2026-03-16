@@ -3,13 +3,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * @brief OLED display handle implementation v1.1.0
+ * @brief OLED display handle implementation v1.1.4
  * 
  * Function description:
  *   1. Use u8g2 library with SPI2 driver for SSD1306 OLED
  *   2. Multi-page management and switching (11 pages)
  *   3. SW3/SW4 polling detection (non-interrupt method)
  *   4. Mutual exclusion protection for SPI resources shared with LED
+ *   5. MSH console test commands with correct export aliases (v1.1.4)
  */
 
 #include <rtthread.h>
@@ -166,6 +167,7 @@ rt_err_t oled_switch_page(OledPageId_t page_id)
 {
     if (page_id >= PAGE_COUNT) return -RT_ERROR;
     
+    rt_kprintf("[OLED] Switching page %d -> %d\r\n", s_current_page, page_id);
     s_current_page = page_id;
     oled_trigger_refresh();
     
@@ -180,6 +182,19 @@ rt_err_t oled_switch_page(OledPageId_t page_id)
 OledPageId_t oled_get_current_page(void)
 {
     return s_current_page;
+}
+
+
+/**
+ * @brief Force screen refresh
+ */
+void oled_force_refresh(void)
+{
+    rt_mutex_fetch(&s_spi_mutex, RT_WAITING_FOREVER);
+    u8g2_ClearDisplay(&s_u8g2);
+    s_pages[s_current_page].render(&s_u8g2);
+    u8g2_SendBuffer(&s_u8g2);
+    rt_mutex_post(&s_spi_mutex);
 }
 
 
@@ -329,7 +344,7 @@ static void oled_gpio_init(void)
 
 
 /**
- * @brief Initialize u8g2 display object (SPI2 DRIVER v1.1.2)
+ * @brief Initialize u8g2 display object (SPI2 DRIVER v1.1.4)
  * NOTE: Two-stage init - first call enables SPI2, second call does actual display init
  *       RESET pin set to U8X8_PIN_NONE (255) because OLED_RST_PIN removed from global_conf.h
  */
@@ -402,7 +417,7 @@ void oled_update_task(void* parameter)
 
 
 /**
- * ========== Page Renderers (v1.1.1 - Full Display Content Restored) ==========
+ * ========== Page Renderers (v1.1.4 - Full Display Content Restored) ==========
  */
 
 static void render_boot_page(u8g2_t* u8g2)
@@ -655,26 +670,24 @@ static void render_settings_page(u8g2_t* u8g2)
 
 
 /**
- * ========== MSH Console Commands for Testing ==========
+ * ========== MSH Console Commands for Testing (v1.1.4 - CORRECT EXPORT ALIASES) ==========
+ * 
+ * IMPORTANT NOTE ON MSH_CMD_EXPORT_ALIAS MACRO USAGE:
+ * MSH_CMD_EXPORT_ALIAS(function_name, command_name, description)
+ *   - function_name = C function that MUST be defined in code
+ *   - command_name = Name user types in msh console (can be different from function_name)
+ *   - description = Help text displayed in 'help' command
+ * 
+ * Pattern: Define function FIRST, then add MSH_CMD_EXPORT_ALIAS macro
  */
 
 /**
- * @brief MSH command to test OLED initialization and display control
+ * @brief MSH command implementation for oled_test
  * Usage: oled_test [page_id]
  *   page_id: 0=boot, 1=home, 2=pid, 3=ultrasonic, 4=ir, 5=battery, 
  *            6=water, 7=motor, 8=imu, 9=fault, 10=settings
  */
-MSH_CMD_EXPORT_ALIAS(oled_test_cmd, oled_test, OLED Display Control Test (v1.1.2));
-
-/**
- * @brief Actual implementation of oled_test command
- */
-void oled_test_cmd(int argc, char *argv[])
-{
-    oled_test_impl(argc, argv);
-}
-
-void oled_test_impl(int argc, char *argv[])
+void oled_test(int argc, char *argv[])
 {
     int page_id = -1;
     
@@ -689,7 +702,7 @@ void oled_test_impl(int argc, char *argv[])
     }
     
     rt_kprintf("[OLED] ===========================================\r\n");
-    rt_kprintf("[OLED] OLED Display Control Test (v1.1.2)\r\n");
+    rt_kprintf("[OLED] OLED Display Control Test (v1.1.4)\r\n");
     rt_kprintf("[OLED] ===========================================\r\n");
     rt_kprintf("[OLED] Page count: %d\r\n", PAGE_COUNT);
     
@@ -724,37 +737,28 @@ void oled_test_impl(int argc, char *argv[])
     rt_kprintf("[OLED]   oled_test 5       - Switch to battery page\r\n");
     rt_kprintf("[OLED]   oled_refresh      - Force refresh current page\r\n");
     rt_kprintf("[OLED]   oled_status       - Show OLED status\r\n");
+    rt_kprintf("[OLED]   oled_cycle N      - Cycle through N pages\r\n");
     rt_kprintf("[OLED] ===========================================\r\n");
 }
+MSH_CMD_EXPORT_ALIAS(oled_test, oled_test, OLED Display Control Test (v1.1.4));
 
 /**
- * @brief MSH command to force refresh current page
+ * @brief MSH command implementation for oled_refresh
  * Usage: oled_refresh
  */
-MSH_CMD_EXPORT_ALIAS(oled_force_refresh, oled_refresh, OLED Force Screen Refresh);
-
-void oled_force_refresh_impl(int argc, char *argv[])
+void oled_refresh_cmd(int argc, char *argv[])
 {
     rt_kprintf("[OLED] Forcing screen refresh...\r\n");
     oled_force_refresh();
     rt_kprintf("[OLED] Refresh complete!\r\n");
 }
+MSH_CMD_EXPORT_ALIAS(oled_refresh_cmd, oled_refresh, OLED Force Screen Refresh);
 
 /**
- * @brief Actual wrapper function
- */
-void oled_force_refresh_cmd(int argc, char *argv[])
-{
-    oled_force_refresh_impl(argc, argv);
-}
-
-/**
- * @brief MSH command to show OLED status
+ * @brief MSH command implementation for oled_status
  * Usage: oled_status
  */
-MSH_CMD_EXPORT_ALIAS(oled_show_status, oled_status, OLED Show Status Information);
-
-void oled_status_impl(int argc, char *argv[])
+void oled_status(int argc, char *argv[])
 {
     OledPageId_t page = oled_get_current_page();
     
@@ -782,23 +786,14 @@ void oled_status_impl(int argc, char *argv[])
     rt_kprintf("[OLED] Battery voltage: %d mV\r\n", g_oled_battery_mv);
     rt_kprintf("[OLED] OLED initialized: Yes\r\n");
 }
+MSH_CMD_EXPORT_ALIAS(oled_status, oled_status, OLED Show Status Information);
 
 /**
- * @brief Actual wrapper function
- */
-void oled_status_cmd(int argc, char *argv[])
-{
-    oled_status_impl(argc, argv);
-}
-
-/**
- * @brief MSH command to cycle through all pages
+ * @brief MSH command implementation for oled_cycle
  * Usage: oled_cycle [count]
  *   count: number of pages to cycle (default: 3)
  */
-MSH_CMD_EXPORT_ALIAS(oled_cycle_pages, oled_cycle, OLED Cycle Through Pages);
-
-void oled_cycle_impl(int argc, char *argv[])
+void oled_cycle(int argc, char *argv[])
 {
     int cycles = 3;
     
@@ -821,11 +816,4 @@ void oled_cycle_impl(int argc, char *argv[])
     
     rt_kprintf("[OLED] Cycle complete!\r\n");
 }
-
-/**
- * @brief Actual wrapper function
- */
-void oled_cycle_cmd(int argc, char *argv[])
-{
-    oled_cycle_impl(argc, argv);
-}
+MSH_CMD_EXPORT_ALIAS(oled_cycle, oled_cycle, OLED Cycle Through Pages);
