@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * @brief Button object driver - Key input handling with debouncing
+ * @brief Button object driver - Key input handling with debouncing and IPC notifications
  * 
  * Hardware connections:
  *   - SW3 (PC13): Previous page / Back
@@ -11,11 +11,10 @@
  *   - SW5 (PC15): Not used
  *   - HOME (PE9): Return to charging dock
  * 
- * Features:
- *   - Software debouncing (20ms configurable)
- *   - Short press / long press detection
- *   - Callback registration for each key
- *   - MSH console test commands
+ * Architecture:
+ *   - Timer-based scan (10ms interval)
+ *   - Event detection via IPC (message queue + semaphore)
+ *   - NO blocking operations in timer callback!
  */
 
 #include <rtthread.h>
@@ -25,7 +24,7 @@
 
 
 /**
- * @brief LED state array (8 individual LEDs)
+ * @brief Button state array (4 individual buttons)
  */
 static ButtonObject_t s_buttons[BUTTON_TOTAL_COUNT];
 
@@ -33,6 +32,12 @@ static ButtonObject_t s_buttons[BUTTON_TOTAL_COUNT];
  * @brief Scan timer handle
  */
 static rt_timer_t s_scan_timer = RT_NULL;
+
+/**
+ * @brief IPC Objects for notification
+ */
+static rt_messageq_t s_page_queue = RT_NULL;     /* Queue for page change events */
+static rt_sem_t s_home_signal = RT_NULL;         /* Semaphore for HOME press */
 
 /**
  * @brief Long press threshold (in milliseconds)
@@ -65,31 +70,38 @@ static void button_detect_press(rt_uint8_t btn_idx);
  */
 static void button_deliver_event(rt_uint8_t btn_idx, ButtonEvent_t event);
 
+/**
+ * @brief Send page change event to OLED task via message queue
+ * @param page_id Page number to switch to (or special code for prev/next)
+ */
+static void button_send_page_change(rt_uint32_t page_id);
+
+/**
+ * @brief Trigger HOME signal for upper host notification
+ */
+static void button_trigger_home_signal(void);
+
 
 /* ========== Public Functions Implementation ========== */
 
 /**
- * @brief Initialize all button objects
+ * @brief Initialize all button objects and IPC primitives
  */
 void button_init(void)
 {
     rt_int8_t i;
     
     /* 1. Configure all pins as input with pull-up */
-    /* SW3 = PC13 */
-    rt_pin_mode(KEY_SW3_PIN, PIN_MODE_INPUT_PULLUP);
-    /* SW4 = PC14 */
-    rt_pin_mode(KEY_SW4_PIN, PIN_MODE_INPUT_PULLUP);
-    /* SW5 = PC15 */
-    rt_pin_mode(KEY_SW5_PIN, PIN_MODE_INPUT_PULLUP);
-    /* HOME = PE9 */
-    rt_pin_mode(KEY_HOME_PIN, PIN_MODE_INPUT_PULLUP);
+    rt_pin_mode(KEY_SW3_PIN, PIN_MODE_INPUT_PULLUP);    // PC13
+    rt_pin_mode(KEY_SW4_PIN, PIN_MODE_INPUT_PULLUP);    // PC14
+    rt_pin_mode(KEY_SW5_PIN, PIN_MODE_INPUT_PULLUP);    // PC15
+    rt_pin_mode(KEY_HOME_PIN, PIN_MODE_INPUT_PULLUP);   // PE9
     
     /* 2. Initialize button objects */
     for (i = 0; i < BUTTON_TOTAL_COUNT; i++)
     {
         s_buttons[i].id = i;
-        s_buttons[i].enabled = RT_TRUE;     // Enable by default
+        s_buttons[i].enabled = RT_TRUE;
         s_buttons[i].debounce_ticks = 0;
         s_buttons[i].last_press_time = 0;
         s_buttons[i].is_pressed = RT_FALSE;
@@ -97,37 +109,80 @@ void button_init(void)
         s_buttons[i].callback = RT_NULL;
     }
     
-    /* 3. Create scan timer (10ms period) */
+    /* 3. Create IPC Objects */
+    /* Page change queue: max 8 pages, each entry is uint32_t page number */
+    s_page_queue = rt_mq_create("pgmq", sizeof(rt_uint32_t), 8, RT_IPC_FLAG_FIFO);
+    if (s_page_queue == RT_NULL)
+    {
+        rt_kprintf("[Button] Error: Failed to create page queue!\n");
+    }
+    
+    /* HOME press signal semaphore */
+    s_home_signal = rt_sem_create("hsignal", 0, RT_IPC_FLAG_PRIO);
+    if (s_home_signal == RT_NULL)
+    {
+        rt_kprintf("[Button] Error: Failed to create HOME semaphore!\n");
+    }
+    
+    /* 4. Create scan timer (10ms period) */
     s_scan_timer = rt_timer_create("btnscn", 
                                     button_scan_timer_callback, 
                                     RT_NULL, 
-                                    10,        // 10ms period
+                                    10,        
                                     RT_TIMER_FLAG_PERIODIC);
     
     if (s_scan_timer != RT_NULL)
     {
         rt_timer_start(s_scan_timer);
-        rt_kprintf("[Button] Scan timer started (10ms)\n");
-    }
-    else
-    {
-        rt_kprintf("[Button] Error: Failed to create scan timer!\n");
     }
     
-    rt_kprintf("[Button] Initialized %d buttons\n", BUTTON_TOTAL_COUNT);
+    rt_kprintf("[Button] Initialized %d buttons + IPC\n", BUTTON_TOTAL_COUNT);
 }
 
 
 /**
  * @brief Scan timer callback (called every 10ms)
+ * @note Only detect events, NO printing or long operations here!
+ *       All actions go to queue/signal via IPC mechanism
  */
 static void button_scan_timer_callback(void *parameter)
 {
     rt_uint8_t i;
     
+    /* Disable interrupts during scan for thread safety */
+    rt_base_t level = rt_hw_interrupt_disable();
+    
     for (i = 0; i < BUTTON_TOTAL_COUNT; i++)
     {
         button_detect_press(i);
+    }
+    
+    rt_hw_interrupt_enable(level);
+}
+
+
+/**
+ * @brief Send page change event to OLED task via message queue
+ */
+static void button_send_page_change(rt_uint32_t page_id)
+{
+    if (s_page_queue != RT_NULL)
+    {
+        /* Send immediately without blocking - if queue full, just drop it */
+        rt_mq_send(s_page_queue, &page_id, sizeof(page_id));
+    }
+}
+
+
+/**
+ * @brief Trigger HOME signal for upper host notification
+ */
+static void button_trigger_home_signal(void)
+{
+    if (s_home_signal != RT_NULL)
+    {
+        /* Give semaphore - wakes up waiting navigation task */
+        rt_sem_post(s_home_signal);
     }
 }
 
@@ -138,24 +193,19 @@ static void button_scan_timer_callback(void *parameter)
 static void button_detect_press(rt_uint8_t btn_idx)
 {
     rt_bool_t current_state;
-    ButtonId_t button_id;
     
     switch (btn_idx)
     {
         case BUTTON_ID_SW3:
-            button_id = BUTTON_ID_SW3;
             current_state = !rt_pin_read(KEY_SW3_PIN);
             break;
         case BUTTON_ID_SW4:
-            button_id = BUTTON_ID_SW4;
             current_state = !rt_pin_read(KEY_SW4_PIN);
             break;
         case BUTTON_ID_SW5:
-            button_id = BUTTON_ID_SW5;
             current_state = !rt_pin_read(KEY_SW5_PIN);
             break;
         case BUTTON_ID_HOME:
-            button_id = BUTTON_ID_HOME;
             current_state = !rt_pin_read(KEY_HOME_PIN);
             break;
         default:
@@ -164,7 +214,6 @@ static void button_detect_press(rt_uint8_t btn_idx)
     
     ButtonObject_t* btn = &s_buttons[btn_idx];
     
-    /* If disabled, skip processing */
     if (!btn->enabled)
     {
         return;
@@ -197,6 +246,19 @@ static void button_detect_press(rt_uint8_t btn_idx)
                 if (duration_ms >= LONG_PRESS_THRESHOLD_MS)
                 {
                     /* Long press detected */
+                    
+                    /* IPC Notifications */
+                    switch (btn_idx)
+                    {
+                        case BUTTON_ID_HOME:
+                            button_trigger_home_signal();  // Wake up navigation task
+                            break;
+                        
+                        default:
+                            /* No page change for non-HOME long press */
+                            break;
+                    }
+                    
                     button_deliver_event(btn_idx, BUTTON_EVENT_LONG_PRESS);
                     btn->event_fired = RT_TRUE;
                 }
@@ -211,18 +273,37 @@ static void button_detect_press(rt_uint8_t btn_idx)
             btn->is_pressed = RT_FALSE;
             btn->debounce_ticks = 0;
             
-            /* Only deliver release event if no long press fired */
-            if (!btn->event_fired && btn->callback != RT_NULL)
+            /* Check if short press (not long press) */
+            if (!btn->event_fired)
             {
-                /* Check if short press */
                 rt_int32_t duration_ms = rt_tick_get_millisecond() - btn->last_press_time;
                 
                 if (duration_ms < LONG_PRESS_THRESHOLD_MS)
                 {
-                    button_deliver_event(btn_idx, BUTTON_EVENT_SHORT_PRESS);
+                    /* Short press detected - trigger page change IPC */
+                    switch (btn_idx)
+                    {
+                        case BUTTON_ID_SW3:
+                            /* Previous page: send 0xFFFFFFFF as special code for "prev" */
+                            button_send_page_change(0xFFFFFFFF);  
+                            break;
+                            
+                        case BUTTON_ID_SW4:
+                            /* Next page: send 0xFFFFFFFE as special code for "next" */
+                            button_send_page_change(0xFFFFFFFE);  
+                            break;
+                            
+                        default:
+                            break;
+                    }
+                    
+                    /* Call user callbacks */
+                    if (btn->callback != RT_NULL)
+                    {
+                        btn->callback((ButtonId_t)btn_idx, BUTTON_EVENT_SHORT_PRESS);
+                        btn->callback((ButtonId_t)btn_idx, BUTTON_EVENT_RELEASE);
+                    }
                 }
-                
-                button_deliver_event(btn_idx, BUTTON_EVENT_RELEASE);
             }
             
             btn->event_fired = RT_FALSE;
@@ -332,6 +413,24 @@ rt_uint32_t button_get_time_since_press(ButtonId_t id)
 }
 
 
+/**
+ * @brief Get the page message queue handle
+ */
+rt_messageq_t button_get_page_queue(void)
+{
+    return s_page_queue;
+}
+
+
+/**
+ * @brief Get the HOME press semaphore handle
+ */
+rt_sem_t button_get_home_semaphore(void)
+{
+    return s_home_signal;
+}
+
+
 /* ========== Debug MSH Commands ========== */
 
 #ifdef RT_USING_MSH
@@ -345,7 +444,6 @@ static void button_test(int argc, char** argv)
     rt_kprintf("Press any button to see event log\n");
     rt_kprintf("--------------------------------------\n\n");
     
-    /* Register temporary callback */
     static uint8_t short_count[BUTTON_TOTAL_COUNT] = {0};
     static uint8_t long_count[BUTTON_TOTAL_COUNT] = {0};
     

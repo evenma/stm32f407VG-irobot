@@ -11,11 +11,10 @@
  *   - SW5 (PC15): Not used
  *   - HOME (PE9): Return to charging dock
  * 
- * Features:
- *   - Software debouncing (20ms configurable)
- *   - Short press / long press detection
- *   - Callback registration for each key
- *   - MSH console test commands
+ * Architecture:
+ *   - Timer-based scan (10ms interval)
+ *   - Event detection via IPC (message queue + semaphore)
+ *   - NO blocking operations in timer callback!
  */
 
 #ifndef PERIPHERALS_BUTTON_H__
@@ -78,8 +77,8 @@ typedef struct
  */
 
 /**
- * @brief Initialize all button objects
- * @note Configures GPIO pins as input with pull-up
+ * @brief Initialize all button objects and IPC primitives
+ * @note Creates message queue for page changes and semaphore for HOME signal
  */
 void button_init(void);
 
@@ -89,14 +88,13 @@ void button_init(void);
  */
 
 /**
- * @brief Process button scan (call periodically from main loop or timer)
- * @note Should be called every 10-20ms for responsive detection
+ * @brief Process button scan (alternative manual method if no timer)
  */
 void button_scan(void);
 
 
 /**
- * ========== Callback Registration ==========
+ * ========== Callback Registration (Optional) ==========
  */
 
 /**
@@ -138,9 +136,41 @@ rt_bool_t button_is_pressed(ButtonId_t id);
 /**
  * @brief Get time since last press (in milliseconds)
  * @param id Button ID
- * @return Milliseconds since press, or 0 if not pressed recently
+ * @return Milliseconds since press, or 0xFFFFFFFF if not pressed recently
  */
 rt_uint32_t button_get_time_since_press(ButtonId_t id);
+
+
+/**
+ * ========== IPC Interface Functions ==========
+ */
+
+/**
+ * @brief Get the page change message queue handle
+ * @return Message queue pointer, can be used by OLED task to receive page requests
+ * 
+ * Example usage in OLED task:
+ * @code
+ * rt_uint32_t page_id;
+ * rt_err_t result = rt_mq_recv(s_page_queue, &page_id, sizeof(page_id), 100);
+ * if (result == RT_EOK) {
+ *     oled_switch_page(page_id);
+ * }
+ * @endcode
+ */
+rt_messageq_t button_get_page_queue(void);
+
+/**
+ * @brief Get the HOME press semaphore handle
+ * @return Semaphore pointer, can be used by upper host navigation task
+ * 
+ * Example usage in navigation task:
+ * @code
+ * rt_sem_take(button_get_home_semaphore(), RT_WAITING_FOREVER);
+ * navigate_to_charging_dock();
+ * @endcode
+ */
+rt_sem_t button_get_home_semaphore(void);
 
 
 #endif /* PERIPHERALS_BUTTON_H__ */
