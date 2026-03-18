@@ -158,7 +158,7 @@ rt_uint32_t button_get_time_since_press(ButtonId_t id);
  * }
  * @endcode
  */
-rt_messageq_t button_get_page_queue(void);
+rt_mq_t button_get_page_queue(void);
 
 /**
  * @brief Get the HOME press semaphore handle

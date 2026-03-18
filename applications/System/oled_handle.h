@@ -17,6 +17,7 @@
 #define SYSTEM_OLED_HANDLE_H__
 
 #include <rtthread.h>
+#include <u8g2.h>
 
 
 /**
@@ -55,8 +56,8 @@ typedef struct
 {
     OledPageId_t id;                // Page ID
     const char* title;              // Page title (displayed in top bar)
-    void (*render)(void);           // Page render function pointer
-    uint8_t refresh_interval_ms;    // Auto refresh interval (0=disabled)
+    void (*render)(u8g2_t *u8g2);            // Page render function pointer
+    uint16_t refresh_interval_ms;    // Auto refresh interval (0=disabled)
 } OledPage_t;
 
 
@@ -82,7 +83,7 @@ void oled_handle_init(void);
  * @param render_func Page render function (callback for drawing content)
  * @return 0 on success, negative value on failure
  */
-int oled_register_page(OledPageId_t page_id, const char* title, void (*render_func)(void));
+int oled_register_page(OledPageId_t page_id, const char* title, void (*render_func)(u8g2_t*));
 
 /**
  * @brief Switch to specified page

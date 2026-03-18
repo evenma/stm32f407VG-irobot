@@ -13,7 +13,7 @@
  * @brief LED 指示灯数量定义
  * 8 个指示灯：LED0~LED5 本地状态 + LED6~LED7 上位机控制
  */
-#define LED_TOTAL_COUNT 8
+#define LED_TOTAL_COUNT         8
 
 /**
  * @brief LED 配对索引定义
@@ -22,14 +22,14 @@
  * 4 = LED4 (满水绿灯), 5 = LED5 (缺水红灯)
  * 6 = LED6 (导航绿灯←上位机), 7 = LED7 (异常红灯←上位机)
  */
-#define LED_IDX_WORKING_GREEN 0
-#define LED_IDX_FAULT_RED 1
-#define LED_IDX_FULL_BAT_GREEN 2
-#define LED_IDX_LOW_BAT_RED 3
-#define LED_IDX_FULL_WATER_GREEN 4
-#define LED_IDX_LOW_WATER_RED 5
-#define LED_IDX_NAV_GREEN 6 /* ← 上位机 LED7 */
-#define LED_IDX_ERROR_RED 7 /* ← 上位机 LED8 */
+#define LED_IDX_WORKING_GREEN   0
+#define LED_IDX_FAULT_RED       1
+#define LED_IDX_FULL_BAT_GREEN  2
+#define LED_IDX_LOW_BAT_RED     3
+#define LED_IDX_FULL_WATER_GREEN    4
+#define LED_IDX_LOW_WATER_RED   5
+#define LED_IDX_NAV_GREEN       6    /* ← 上位机 LED7 */
+#define LED_IDX_ERROR_RED       7    /* ← 上位机 LED8 */
 
 
 /**
@@ -37,10 +37,10 @@
  */
 typedef enum
 {
- LED_COLOR_OFF = 0, // 熄灭
- LED_COLOR_ON, // 亮 (单色 LED 只有一种亮度)
- LED_COLOR_FLASH_FAST, // 快速闪烁 (100ms)
- LED_COLOR_FLASH_SLOW, // 慢速闪烁 (500ms)
+    LED_COLOR_OFF = 0,      // 熄灭
+    LED_COLOR_ON,           // 亮 (单色 LED 只有一种亮度)
+    LED_COLOR_FLASH_FAST,   // 快速闪烁 (100ms)
+    LED_COLOR_FLASH_SLOW,   // 慢速闪烁 (500ms)
 } LedColorState_t;
 
 #define LED_COLOR_GREEN_ON LED_COLOR_ON
@@ -51,9 +51,9 @@ typedef enum
  */
 typedef struct
 {
- rt_uint8_t id; // LED ID (0-7)
- LedColorState_t color_state; // 当前颜色状态
- rt_bool_t enabled; // 是否启用此 LED
+    rt_uint8_t id;                // LED ID (0-7)
+    LedColorState_t color_state;  // 当前颜色状态
+    rt_bool_t enabled;            // 是否启用此 LED
 } LedObject_t;
 
 
