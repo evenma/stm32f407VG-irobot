@@ -3,7 +3,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * @brief QMI8658C 6-axis IMU driver v6.0 - OFFICIAL REGISTER MAP CORRECTED
+ * @brief QMI8658C 6-axis IMU driver v7.0 - FOCUS ON DATA ACQUISITION
+ * 
+ * Architecture Changes:
+ *   ✓ 下位机专注数据采集、通信和实时控制
+ *   ✓ 姿态解算和校准任务移到上位机（树莓派 + ROS2）
+ *   ✓ 默认不打印数据，通过 mSH 控制台开关定时打印
+ *   ✓ 支持线程停止/重新开启
+ *   ✓ 移除下位机姿态解算（Mahony filter）
+ *   ✓ 移除自动校准（移到上位机）
  * 
  * Critical Correction Based on User Feedback & Official Datasheet:
  *   ✓ REGISTERS ARE DIFFERENT THAN NORMAL/OIS MODE ASSUMPTIONS!
@@ -233,7 +241,7 @@ typedef struct
 
 
 /**
- * @brief Decoded physical data with Euler angles
+ * @brief Decoded physical data with Euler angles (pose estimation moved to PC)
  */
 typedef struct
 {
@@ -245,9 +253,9 @@ typedef struct
     float gyro_y_deg;       /* Y-axis angular velocity (deg/s) */
     float gyro_z_deg;       /* Z-axis angular velocity (deg/s) */
     
-    float pitch;            /* Pitch angle (-90°~+90°) */
-    float roll;             /* Roll angle (-180°~+180°) */
-    float yaw;              /* Yaw angle (-180°~+180°) */
+    float pitch;            /* Pitch angle (-90°~+90°) - NOT calculated on MCU */
+    float roll;             /* Roll angle (-180°~+180°) - NOT calculated on MCU */
+    float yaw;              /* Yaw angle (-180°~+180°) - NOT calculated on MCU */
 } QmiDataDecoded_t;
 
 
@@ -291,6 +299,11 @@ int qmi8658_quick_calibrate(rt_uint16_t timeout_ms);
 void qmi8658_set_layout(uint8_t layout);
 uint8_t qmi8658_read_revision(void);
 rt_err_t qmi8658_validate_connection(int max_attempts);
+
+/* Thread control functions */
+int qmi8658_stop_thread(void);
+int qmi8658_start_thread(void);
+int qmi8658_toggle_print(int argc, char** argv);
 
 /* MSH Debug Commands */
 #ifdef RT_USING_MSH
