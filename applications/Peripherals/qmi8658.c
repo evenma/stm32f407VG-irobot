@@ -83,7 +83,7 @@ static const uint16_t gyr_odr_hz[] = {
  * @param value 要打印的浮点数
  * @param width 总宽度（包含符号、整数、小数点和精度），若实际宽度不足则用空格填充（右对齐）
  * @param precision 小数位数（0-6）
- * @param sign 是否显示正号（1: 显示 + 号，0: 负数自动显示 - 号，正数不显示 +）
+ * @param sign 是否显示正号（1: 显示+号，0: 负数自动显示-号，正数不显示+）
  */
 static void print_float(float value, int width, int precision, int sign)
 {
@@ -827,7 +827,7 @@ int qmi8658_init(void)
         rt_kprintf("[QMI8658] ERROR: Connection validation failed!\n");
         return -RT_ERROR;
     }
-    // 灵敏度自调整 需要 2-3S 上电启动开启自调整
+    // 灵敏度自调整 需要2-3S 上电启动开启自调整
 		qmi8658_self_calibrate();
 		
 		uint8_t cod_status;
@@ -909,7 +909,7 @@ int qmi8658_init(void)
 
 
 /* ========== Public API Functions ========== */
-// raw->acc_x 为原始寄存器数值，acc 为转换量程范围内的值，decoded 为 acc+ 欧拉变化
+// raw->acc_x 为原始寄存器数值，acc为转换量程范围内的值， decoded 为acc+欧拉变化
 int qmi8658_read_once(QmiDataRaw_t* raw, QmiDataDecoded_t* decoded)
 {
     float acc[3], gyro[3];
@@ -1097,7 +1097,7 @@ if (rt_sem_take(&s_data_ready_sem, rt_tick_from_millisecond(100)) == RT_EOK) {
     
     rt_kprintf("\nAccelerometer (g):\n");
     rt_kprintf("  X: ");
-    print_float(data.acc_x_g, 8, 3, 1);   // 总宽度 8，小数 3 位，显示正号
+    print_float(data.acc_x_g, 8, 3, 1);   // 总宽度8，小数3位，显示正号
     rt_kprintf("    Y: ");
     print_float(data.acc_y_g, 8, 3, 1);
     rt_kprintf("    Z: ");
@@ -1106,7 +1106,7 @@ if (rt_sem_take(&s_data_ready_sem, rt_tick_from_millisecond(100)) == RT_EOK) {
     
     rt_kprintf("\nGyroscope (deg/s):\n");
     rt_kprintf("  X: ");
-    print_float(data.gyro_x_deg, 9, 2, 1); // 总宽度 9，小数 2 位，显示正号
+    print_float(data.gyro_x_deg, 9, 2, 1); // 总宽度9，小数2位，显示正号
     rt_kprintf("    Y: ");
     print_float(data.gyro_y_deg, 9, 2, 1);
     rt_kprintf("    Z: ");
