@@ -33,14 +33,14 @@
 /* ========== Configuration (override in global_conf.h if needed) ========== */
 
 #ifndef QMI8658_I2C_BUS
-#define QMI8658_I2C_BUS    "i2c1"  /* Hardware I2C bus name */
+#define QMI8658_I2C_BUS    "hwi2c1"  /* Hardware I2C bus name = hwi2c1 ;Soft I2C bus name = i2c1*/
 #endif
 
 
 /* ========== I2C Slave Addresses ========== */
 
-#define QMI8658_SLAVE_ADDR_L    0x6A  /* ADR_PIN = GND */
-#define QMI8658_SLAVE_ADDR_H    0x6B  /* ADR_PIN = VCC (default) */
+#define QMI8658_SLAVE_ADDR_L    0x6B  /* ADR_PIN = GND  If SA0 = 0, I2C address = 0x6B*/
+#define QMI8658_SLAVE_ADDR_H    0x6A  /* ADR_PIN = VCC  If PIN1=SA0 = 1, I2C address = 0x6A */
 
 
 /* ========== CORRECTED REGISTER MAP (Per Official Datasheet) ========== */
@@ -59,10 +59,11 @@
 #define QMI8658_REG_CTRL9       0x0A      /* Commands */
 
 /* Status and output registers - CORRECTED PER OFFICIAL DATASHEET! */
-#define QMI8658_REG_STATUS      0x18      /* Data ready flags [3:0] */
 #define QMI8658_REG_RESET       0x60      /* Reset register */
 /* Output registers - Normal Mode per official manual! */
-#define QMI8658_REG_DATA_READY  0x2D      /* Sensor Data Available Register */
+#define QMI8658_REG_DATA_READY_STATUS0  0x2E      /* Sensor Data Available Register */
+#define QMI8658_STATUS0_ACC_NEW  (0x01)  /* bit0: Accelerometer new data */
+#define QMI8658_STATUS0_GYRO_NEW (0x02)  /* bit1: Gyroscope new data */
 #define QMI8658_REG_TEMP_OUT    0x33      /* Temperature sensor output */
 #define QMI8658_REG_ACC_OUT_L   0x35      /* Accelerometer X LSB (burst start) */
 #define QMI8658_REG_GYR_OUT_L   0x3B      /* Gyroscope X LSB (burst start) */
@@ -71,15 +72,21 @@
 /* WHOAMI value - QMI8658A ONLY */
 #define QMI8658_WHOAMI          0x05      /* QMI8658A (verified by user/manual) */
 
+/* ========== Accelerometer Configuration (CTRL1 = 0x02) ========== */
+/* Sensor enable bits (written to CTRL1) */
+#define QMI8658_INT1_ENABLE				(0x08)		/* Bit 3: INT1 pin output is enabled */
+#define QMI8658_INT2_ENABLE				(0x10)		/* Bit 4: INT2 pin output is enabled  (PB5)*/
+#define QMI8658_BE_BIG_ENDIAN			(0x20)		/* Bit 5: read data Big-Endian */
+#define QMI8658_ADDR_AI						(0x40)		/* Bit 6: I2C address auto increment */
 
 /* ========== Accelerometer Configuration (CTRL2 = 0x03) ========== */
 
 enum qmi8658_AccRange
 {
-    Qmi8658AccRange_2g   = 0x00 << 6,   /* ±2g */
-    Qmi8658AccRange_4g   = 0x01 << 6,   /* ±4g (RECOMMENDED default) */
-    Qmi8658AccRange_8g   = 0x02 << 6,   /* ±8g */
-    Qmi8658AccRange_16g  = 0x03 << 6    /* ±16g */
+    Qmi8658AccRange_2g   = 0x00 << 4,   /* ±2g */
+    Qmi8658AccRange_4g   = 0x01 << 4,   /* ±4g (RECOMMENDED default) */
+    Qmi8658AccRange_8g   = 0x02 << 4,   /* ±8g */
+    Qmi8658AccRange_16g  = 0x03 << 4    /* ±16g */
 };
 
 enum qmi8658_AccOdr
@@ -115,22 +122,23 @@ enum qmi8658_StConfig
 /* Default ACC configuration - UPDATED */
 #define QMI8658_ACCEL_RANGE    Qmi8658AccRange_4g    /* ±4g (user requirement) */
 #define QMI8658_ACCEL_ODR      Qmi8658AccOdr_250Hz   /* 250Hz (user requirement) */
-#define QMI8658_ACCEL_LPF      Qmi8658Lpf_Enable     /* Enable LPF */
+#define QMI8658_ACCEL_LPF      Qmi8658Lpf_Disable	//Qmi8658Lpf_Enable     /* Enable LPF */
 #define QMI8658_ACCEL_ST       Qmi8658St_Disable     /* Disable self-test */
 
+#define QMI8658_aST						(0x80)		/* Bit 7: Enable Accelerometer Self-Test */
 
 /* ========== Gyroscope Configuration (CTRL3 = 0x04) ========== */
 
 enum qmi8658_GyrRange
 {	
-    Qmi8658GyrRange_16dps   = 0 << 5,      /* ±16 dps */
-    Qmi8658GyrRange_32dps   = 1 << 5,      /* ±32 dps */
-    Qmi8658GyrRange_64dps   = 2 << 5,      /* ±64 dps */
-    Qmi8658GyrRange_128dps  = 3 << 5,      /* ±128 dps */
-    Qmi8658GyrRange_256dps  = 4 << 5,      /* ±256 dps */
-    Qmi8658GyrRange_512dps  = 5 << 5,      /* ±512 dps */
-    Qmi8658GyrRange_1024dps = 6 << 5,      /* ±1024 dps */
-    Qmi8658GyrRange_2048dps = 7 << 5       /* ±2048 dps (max) */
+    Qmi8658GyrRange_16dps   = 0 << 4,      /* ±16 dps */
+    Qmi8658GyrRange_32dps   = 1 << 4,      /* ±32 dps */
+    Qmi8658GyrRange_64dps   = 2 << 4,      /* ±64 dps */
+    Qmi8658GyrRange_128dps  = 3 << 4,      /* ±128 dps */
+    Qmi8658GyrRange_256dps  = 4 << 4,      /* ±256 dps */
+    Qmi8658GyrRange_512dps  = 5 << 4,      /* ±512 dps */
+    Qmi8658GyrRange_1024dps = 6 << 4,      /* ±1024 dps */
+    Qmi8658GyrRange_2048dps = 7 << 4       /* ±2048 dps (max) */
 };
 
 enum qmi8658_GyrOdr
@@ -148,28 +156,47 @@ enum qmi8658_GyrOdr
 
 
 /* Default GYRO configuration - UPDATED */
-#define QMI8658_GYRO_RANGE    Qmi8658GyrRange_2048dps   /* ±2048 dps max */
+#define QMI8658_GYRO_RANGE    Qmi8658GyrRange_128dps //Qmi8658GyrRange_2048dps   /* ±2048 dps max */
 #define QMI8658_GYRO_ODR      Qmi8658GyrOdr_250Hz       /* 250Hz */
-#define QMI8658_GYRO_LPF      Qmi8658Lpf_Enable         /* Enable LPF */
+#define QMI8658_GYRO_LPF      Qmi8658Lpf_Disable //Qmi8658Lpf_Enable         /* Enable LPF */
 #define QMI8658_GYRO_ST       Qmi8658St_Disable         /* Disable self-test */
 
+#define QMI8658_gST						(0x80)		/* Bit 7: Enable  Gyro Self-Test */
 
-/* ========== Interrupt Configuration (CTRL7 = 0x08) ========== */
+/* ========== LPF Configuration (Ctrl5 = 0x06) ========== */
+#define QMI8658_aLPF_EN    (0x01)    /* Bit 0:  Enable Accelerometer Low-Pass Filter with the mode given by aLPF_MODE */
+/* Accelerometer LPF modes (bits [2:1]) */
+#define A_LSP_MODE_0    (0x00 << 1)
+#define A_LSP_MODE_1    (0x01 << 1)
+#define A_LSP_MODE_2    (0x02 << 1)
+#define A_LSP_MODE_3    (0x03 << 1)  /* Maximum filtering (recommended) 13.37% of ODR*/
 
-#define QMI8658_DRDY_EN       (0x80)        /* Bit 7: Data ready interrupt enable */
-#define QMI8658_INT2_SELECT   (0x00)        /* Bit 6: Use INT2 pin (PB5) */
+#define QMI8658_gLPF_EN    (0x10)    /* Bit 4:  Enable Accelerometer Low-Pass Filter with the mode given by aLPF_MODE */
+/* Gyroscope LPF modes (bits [6:5]) */
+#define G_LSP_MODE_0    (0x00 << 5)
+#define G_LSP_MODE_1    (0x01 << 5)
+#define G_LSP_MODE_2    (0x02 << 5)
+#define G_LSP_MODE_3    (0x03 << 5)  /* Maximum filtering (recommended) 13.37% of ODR */
 
-/* Additional interrupt sources (optional) */
-#define QMI8658_WAKEUP_EN     (0x04)        /* Bit 5: Wake-up motion detection */
-#define QMI8658_ANY_MOTION_EN (0x02)        /* Bit 4: Any-motion detection */
-#define QMI8658_NO_MOTION_EN  (0x01)        /* Bit 3: No-motion detection */
-
-
+/* ========== Interrupt Configuration (CTRL7 = 0x08)========== */								
 /* Sensor enable bits (written to CTRL7) */
-#define QMI8658_ACC_ENABLE    (0x01)        /* Enable accelerometer */
-#define QMI8658_GYR_ENABLE    (0x02)        /* Enable gyroscope */
+#define QMI8658_DISABLE_ALL		(0x0)
+#define QMI8658_ACC_ENABLE    (0x01)        /*Bit 0: Enable accelerometer */
+#define QMI8658_GYR_ENABLE    (0x02)        /*Bit 1: Enable gyroscope */
 #define QMI8658_ACCGYR_ENABLE (QMI8658_ACC_ENABLE | QMI8658_GYR_ENABLE)
+#define QMI8658_DRDY_DIS       (0)    /*Bit 5: 0: DRDY(Data Ready) is enabled, is driven to the INT2 pin */
+#define QMI8658_gSN			       (0)    /*Bit 4: 0: Gyroscope in Full Mode (Drive and Sense are enabled). */
+#define QMI8658_USE_FIFO			/* Bit 7:  0: Disable SyncSample mode  1: Enable SyncSample mode */
 
+/* ========== Interrupt Configuration (CTRL8 = 0x09)========== */
+/* Additional interrupt sources (optional) */
+#define QMI8658_CTRL9_HandShake_Type (0x80) 	/* Bit 7: use STATUSINT.bit7 as CTRL9 handshake */
+#define QMI8658_ACTIVITY_INT_SEL (0x40) 			/* Bit 6:  INT1 is used for Activity Detection event interrupt*/
+#define QMI8658_Pedo_EN     		(0x10)        /* Bit 4: Pedometer engine */
+#define QMI8658_Sig_Motion_EN  	(0x08)        /* Bit 2: Sig-motion detection */
+#define QMI8658_NO_MOTION_EN  	(0x04)        /* Bit 2: No-motion detection */
+#define QMI8658_ANY_MOTION_EN 	(0x02)        /* Bit 1: Any-motion detection */
+#define QMI8658_TAP_MOTION_EN 	(0x01)        /* Bit 0: Tap-motion detection */
 
 /* ========== CTRL9 Command Codes ========== */
 
@@ -180,28 +207,13 @@ enum qmi8658_Ctrl9Command
     qmi8658_Ctrl9_Cmd_Rst_Fifo        = 0x04,     /* Reset FIFO */
     qmi8658_Ctrl9_Cmd_On_Demand_Cali  = 0xA2      /* On-demand self-calibration */
 };
+#define QMI8658_REG_COD_STATUS          0x46      /* Calibration-On-Demand (COD) Status Register */
 
 
 /* ========== CTRL2/CTRL3 Self-Calibration Bits ========== */
 
 #define QMI8658_CTRL2_CAL_EN    (0x80)    /* Bit 7: ACC self-test/calibration enable */
 #define QMI8658_CTRL3_CAL_EN    (0x80)    /* Bit 7: GYRO self-test/calibration enable */
-
-
-/* ========== LPF Configuration (Ctrl5 = 0x06) ========== */
-
-/* Accelerometer LPF modes (bits [2:1]) */
-#define A_LSP_MODE_0    (0x00 << 1)
-#define A_LSP_MODE_1    (0x01 << 1)
-#define A_LSP_MODE_2    (0x02 << 1)
-#define A_LSP_MODE_3    (0x03 << 1)  /* Maximum filtering (recommended) */
-
-/* Gyroscope LPF modes (bits [6:5]) */
-#define G_LSP_MODE_0    (0x00 << 5)
-#define G_LSP_MODE_1    (0x01 << 5)
-#define G_LSP_MODE_2    (0x02 << 5)
-#define G_LSP_MODE_3    (0x03 << 5)  /* Maximum filtering (recommended) */
-
 
 /* ========== Data Structures ========== */
 
@@ -265,6 +277,8 @@ struct QMI8658Object
 /* ========== Public API Functions ========== */
 
 int qmi8658_init(void);
+void qmi8658_imu_thread_entry(void* parameter);
+rt_uint32_t qmi8658_create_imu_thread(void);
 int qmi8658_read_once(QmiDataRaw_t* raw, QmiDataDecoded_t* decoded);
 int qmi8658_read_average(rt_uint8_t samples, QmiDataDecoded_t* decoded);
 void qmi8658_get_latest(QmiDataDecoded_t* decoded);
