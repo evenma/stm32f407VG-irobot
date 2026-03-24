@@ -33,6 +33,7 @@
 #include "qmi8658.h"
 #include "global_conf.h"
 #include <math.h>
+#include "MahonyAhrs.h"
 
 /**
  * @brief Internal QMI8658 object instance
@@ -62,11 +63,16 @@ static struct rt_thread s_imu_thread;
 #define IMU_THREAD_PRIORITY       20
 static rt_uint8_t s_imu_thread_stack[IMU_THREAD_STACK_SIZE];
 
+#define Kp 10.0f               
+#define Ki 0.008f
+/* #define pi 3.14159265f */
+#define halfT 0.002127f        /*half the sample period*/
 
 /**
  * @brief Print control flag (打印控制开关)
  */
 static rt_bool_t s_print_enabled = RT_FALSE;
+rt_bool_t s_report_raw = RT_TRUE;   // RT_FALSE: 打印解码数据（含欧拉角），RT_TRUE: 打印原始物理值
 
 /**
  * @brief Scale factors (dynamically calculated)
@@ -84,9 +90,8 @@ static const uint16_t gyr_odr_hz[] = {
     7174, 3587, 1793, 896, 448, 224, 112, 56, 28, 0, 0, 0, 0, 0, 0, 0
 };
 
-static QmiDataDecoded_t s_latest_data = {0};
-
-
+QmiDataDecoded_t s_latest_data = {0};
+static float gyro_bias[3] = {0};  // 在文件顶部定义
 /**
  * @brief 将浮点数格式化为字符串并打印
  * @param value 要打印的浮点数
@@ -140,123 +145,77 @@ static float invSqrt(float number)
     return y;
 }
 
-void mahony_ahrs(float gx, float gy, float gz, 
-                 float ax, float ay, float az,
-                 float* pitch, float* roll, float* yaw)
+EulerAngles get_euler_angles(float gx, float gy, float gz, float ax, float ay, float az)
 {
-    static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
-    static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
+  EulerAngles eulaer;
+  float roll, pitch,yaw ;
+static  float exInt, eyInt, ezInt;
+static  float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;	/** quaternion of sensor frame relative to auxiliary frame */
+
     float recipNorm;
-    float halfT = 0.00223f;  // dt/2
+    float vx, vy, vz;
+    float ex, ey, ez;
 
-    // 归一化加速度
-    recipNorm = invSqrt(ax*ax + ay*ay + az*az);
-    ax *= recipNorm;
-    ay *= recipNorm;
-    az *= recipNorm;
+    float q0q0 = q0*q0;
+    float q0q1 = q0*q1;
+    float q0q2 = q0*q2;
 
-    // 估计重力方向
-    float vx = 2.0f*(q1*q3 - q0*q2);
-    float vy = 2.0f*(q0*q1 + q2*q3);
-    float vz = q0*q0 - q1*q1 - q2*q2 + q3*q3;
+    float q1q1 = q1*q1;
+    float q1q3 = q1*q3;
 
-    // 误差
-    float ex = ay*vz - az*vy;
-    float ey = az*vx - ax*vz;
-    float ez = ax*vy - ay*vx;
+    float q2q2 = q2*q2;
+    float q2q3 = q2*q3;
 
-    // 积分误差
-    exInt += ex * 0.008f;
-    eyInt += ey * 0.008f;
-    ezInt += ez * 0.008f;
+    float q3q3 = q3*q3;
 
-    // 应用PI修正到角速度
-    gx += 10.0f * ex + exInt;
-    gy += 10.0f * ey + eyInt;
-    gz += 10.0f * ez + ezInt;
 
-    // 四元数微分
-    q0 += (-q1*gx - q2*gy - q3*gz) * halfT;
-    q1 += ( q0*gx + q2*gz - q3*gy) * halfT;
-    q2 += ( q0*gy - q1*gz + q3*gx) * halfT;
-    q3 += ( q0*gz + q1*gy - q2*gx) * halfT;
+    if( ax*ay*az==0)
+        return eulaer;
+    /* 对加速度数据进行归一化处理 */
+    recipNorm = invSqrt( ax* ax +ay*ay + az*az);
+    ax = ax *recipNorm;
+    ay = ay *recipNorm;
+    az = az *recipNorm;
+    /* DCM矩阵旋转 */
+    vx = 2*(q1q3 - q0q2);
+    vy = 2*(q0q1 + q2q3);
+    vz = q0q0 - q1q1 - q2q2 + q3q3 ;
+    /* 在机体坐标系下做向量叉积得到补偿数据 */
+    ex = ay*vz - az*vy ;
+    ey = az*vx - ax*vz ;
+    ez = ax*vy - ay*vx ;
+    /* 对误差进行PI计算，补偿角速度 */
+    exInt = exInt + ex * Ki;
+    eyInt = eyInt + ey * Ki;
+    ezInt = ezInt + ez * Ki;
 
-    // 归一化四元数
+    gx = gx + Kp*ex + exInt;
+    gy = gy + Kp*ey + eyInt;
+    gz = gz + Kp*ez + ezInt;
+    /* 按照四元素微分公式进行四元素更新 */
+    q0 = q0 + (-q1*gx - q2*gy - q3*gz)*halfT;
+    q1 = q1 + (q0*gx + q2*gz - q3*gy)*halfT;
+    q2 = q2 + (q0*gy - q1*gz + q3*gx)*halfT;
+    q3 = q3 + (q0*gz + q1*gy - q2*gx)*halfT;
+
     recipNorm = invSqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
-    q0 *= recipNorm;
-    q1 *= recipNorm;
-    q2 *= recipNorm;
-    q3 *= recipNorm;
 
-    // 欧拉角
-    *roll  = atan2f(2.0f*(q2*q3 + q0*q1), -2.0f*(q1*q1 + q2*q2) + 1.0f) * 57.29578f;
-    *pitch = asinf(-2.0f*(q1*q3 - q0*q2)) * 57.29578f;
-    *yaw   = atan2f(2.0f*(q1*q2 + q0*q3), -2.0f*(q2*q2 + q3*q3) + 1.0f) * 57.29578f;
+    q0 = q0*recipNorm;
+    q1 = q1*recipNorm;
+    q2 = q2*recipNorm;
+    q3 = q3*recipNorm;
+
+    roll =  atan2f(2*q2*q3 + 2*q0*q1, -2*q1*q1 - 2*q2*q2 + 1)* 57.2957795f;
+    pitch =  asinf(2*q1*q3 - 2*q0*q2)* 57.2957795f;
+    yaw  =  -atan2f(2*q1*q2 + 2*q0*q3, -2*q2*q2 -2*q3*q3 + 1)* 57.2957795f;
+
+    eulaer.pitch = pitch;
+    eulaer.roll = roll;
+    eulaer.yaw = yaw;
+
+    // printf("pitch:%.2f roll:%.2f yaw:%.2f\r\n",pitch,roll,yaw);
+    return eulaer;
 }
-
-
-//static void mahony_ahrs(float gx, float gy, float gz, 
-//                        float ax, float ay, float az,
-//                        float* pitch, float* roll, float* yaw)
-//{
-//    float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
-//    float recipNorm;
-//    
-//    if(ax*ay*az == 0.0f) {
-//        *pitch = 0.0f; *roll = 0.0f; *yaw = 0.0f;
-//        return;
-//    }
-//    /* 对加速度数据进行归一化处理 */
-//    recipNorm = invSqrt(ax*ax + ay*ay + az*az);
-//    ax *= recipNorm;
-//    ay *= recipNorm;
-//    az *= recipNorm;
-//    
-//    float Kp = 10.0f; 
-//    float Ki = 0.008f;
-//    float halfT = 0.002230f;//0.002127f; // 0.004f;  /* 1/(2*224.2Hz) */
-//    
-//    float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
-//    
-//		float q0q0 = q0*q0, q0q1 = q0*q1, q0q2 = q0*q2;
-//		float q1q1 = q1*q1, q1q3 = q1*q3;
-//		float q2q2 = q2*q2, q2q3 = q2*q3;
-//		float q3q3 = q3*q3;
-//		/* DCM矩阵旋转 */
-//		float vx = 2.0f*(q1q3 - q0q2);
-//		float vy = 2.0f*(q0q1 + q2q3);
-//		float vz = q0q0 - q1*q1 - q2*q2 + q3*q3;
-//		/* 在机体坐标系下做向量叉积得到补偿数据 */
-//		float ex = ay*vz - az*vy;
-//		float ey = az*vx - ax*vz;
-//		float ez = ax*vy - ay*vx;
-//		
-//		/* 对误差进行PI计算，补偿角速度 */
-//		exInt += ex*Ki;
-//		eyInt += ey*Ki;
-//		ezInt += ez*Ki;
-//		
-//		gx += Kp*ex + exInt;
-//		gy += Kp*ey + eyInt;
-//		gz += Kp*ez + ezInt;
-//		/* 按照四元素微分公式进行四元素更新 */
-//		q0 += -(q1*gx + q2*gy + q3*gz)*halfT;
-//		q1 +=  (q0*gx + q2*gz - q3*gy)*halfT;
-//		q2 +=  (q0*gy - q1*gz + q3*gx)*halfT;
-//		q3 +=  (q0*gz + q1*gy - q2*gx)*halfT;
-//		
-//		recipNorm = invSqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
-//		q0 *= recipNorm;
-//		q1 *= recipNorm;
-//		q2 *= recipNorm;
-//		q3 *= recipNorm;
-//		
-//		*roll  = atan2f(2.0f*q2*q3 + 2.0f*q0*q1, -2.0f*q1*q1 - 2.0f*q2*q2 + 1.0f) * 57.2957795f;
-//		*pitch = asinf(2.0f*q1*q3 - 2.0f*q0*q2) * 57.2957795f;
-//		*yaw   = -atan2f(2.0f*q1*q2 + 2.0f*q0*q3, -2.0f*q2*q2 - 2.0f*q3*q3 + 1.0f) * 57.2957795f;
-
-//}
-
 
 static float accel_to_g(int16_t raw)
 {
@@ -356,22 +315,21 @@ static void imu_recover_i2c_bus(void)
     // 1. 将 SCL 和 SDA 配置为 GPIO 输出模式
     rt_pin_mode(IMU_SCL_PIN, PIN_MODE_OUTPUT);
     rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
-    
-    // 2. 产生 9 个时钟脉冲，尝试释放 SDA
-    for (int i = 0; i < 9; i++) {
-        rt_pin_write(IMU_SCL_PIN, PIN_LOW);
-        rt_hw_us_delay(5);
-        rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-        rt_hw_us_delay(5);
-    }
-    
-    // 3. 发送 STOP 信号
-    rt_pin_write(IMU_SDA_PIN, PIN_LOW);
-    rt_hw_us_delay(5);
+    		
+		    // 方法2：发送停止条件
     rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-    rt_hw_us_delay(5);
     rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
-    rt_hw_us_delay(5);
+    rt_thread_mdelay(1);
+    
+    // 方法3：发送多个停止条件
+    for(int i = 0; i < 3; i++)
+    {
+        // 发送停止条件
+        rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
+        rt_thread_mdelay(1);
+        rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
+        rt_thread_mdelay(1);
+    }    
     
     // 4. 恢复 I2C 引脚为复用功能（由驱动接管）
     rt_pin_mode(IMU_SCL_PIN, PIN_MODE_INPUT);
@@ -440,21 +398,10 @@ rt_err_t qmi8658_validate_connection(int max_attempts)
         rt_kprintf("[QMI8658] Retry %d/%d: WHOAMI=0x%02X (expected 0x%02X)\n", 
                    attempt + 1, max_attempts, whoami, QMI8658_WHOAMI);
 				
-				// 尝试恢复总线并软复位
-        if (attempt == max_attempts - 1) // 最后一次尝试前执行
-        {
-            rt_kprintf("[QMI8658] Trying to recover I2C bus and soft reset...\n");
-            imu_recover_i2c_bus();          // 先恢复总线
-            rt_thread_mdelay(10);
-            // 发送软复位命令（即使 I2C 可能失败，也尝试）
-            imu_i2c_write_reg(QMI8658_REG_RESET, 0xB0);
-            rt_thread_mdelay(50);           // 等待复位完成
-        }
-        else
-        {
-            // 普通重试：简单延时
-            rt_thread_mdelay(10);
-        }
+
+				// 普通重试：简单延时
+				rt_thread_mdelay(10);
+
 				
         attempt++;
     }
@@ -688,11 +635,11 @@ void imu_config_gyro(enum qmi8658_GyrRange range, enum qmi8658_GyrOdr odr,
 static void imu_enable_sensors(uint8_t enable_flags)
 {
 #if defined(QMI8658_SYNC_SAMPLE_MODE)
-	imu_i2c_write_reg(QMI8658Register_Ctrl7, enableFlags | 0x80);
+	imu_i2c_write_reg(Qmi8658Register_Ctrl7, enableFlags | 0x80);
 #elif defined(QMI8658_USE_FIFO)
 	imu_i2c_write_reg(QMI8658_REG_CTRL7, enable_flags);
 #else
-	imu_i2c_write_reg(QMI8658Register_Ctrl7, enable_flags);
+	imu_i2c_write_reg(Qmi8658Register_Ctrl7, enableFlags);
 #endif    
     s_imu.enSensors = enable_flags & 0x03;
     rt_thread_mdelay(10);
@@ -780,9 +727,9 @@ static void imu_read_sensor_data(float acc[3], float gyro[3])
 }
 
 
-static void imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
+static rt_err_t imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
 {
-   
+    rt_err_t err;   
     /* Check STATUS register */
     /* Data Ready Flag check first */
     uint8_t data_ready;
@@ -800,7 +747,7 @@ static void imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
 					gyro[0] = s_imu.last_gyro[0];
 					gyro[1] = s_imu.last_gyro[1];
 					gyro[2] = s_imu.last_gyro[2];
-					return;			
+					return -RT_ERROR;			
 				}
 			}	else{
 				break;
@@ -819,6 +766,62 @@ static void imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
     s_imu.last_gyro[2] = gyro[2];
     
     s_imu.sample_count++;
+		return RT_EOK;
+}
+
+// 在传感器配置完成后、创建线程前添加
+void imu_calibrate_gyro_bias(int samples)
+{
+    float sum[3] = {0};
+    int valid_samples = 0;
+    
+    rt_kprintf("[QMI8658] Starting gyro bias calibration (%d samples)...\n", samples);
+    for (int i = 0; i < samples; i++) {
+        float acc[3], gyro[3];
+        
+        // 读取数据
+        if(imu_read_xyz(acc, gyro, s_imu.layout) != RT_EOK) {
+            i = i-1;
+            continue;
+        }
+        
+        // 检查加速度计是否静止（避免校准时传感器在移动）
+        float acc_mag = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+        if(acc_mag < 0.95f || acc_mag > 1.05f) {
+            rt_kprintf("[QMI8658] Skip sample %d: sensor moving (acc=%.3f)\n", 
+                       i+1, acc_mag);
+            i = i-1;
+            continue;
+        }
+        
+        // 累加陀螺仪数据
+        sum[0] += gyro[0];
+        sum[1] += gyro[1];
+        sum[2] += gyro[2];
+        valid_samples++;
+        
+        rt_thread_mdelay(5);  // 等待5ms（约224Hz = 4.5ms/采样）
+    }
+    
+    if(valid_samples == 0) {
+        rt_kprintf("[QMI8658] ERROR: No valid samples for calibration!\n");
+        return;
+    }
+    
+    // 计算平均值
+    gyro_bias[0] = sum[0] / valid_samples;
+    gyro_bias[1] = sum[1] / valid_samples;
+    gyro_bias[2] = sum[2] / valid_samples;
+    
+    rt_kprintf("\n[QMI8658] Gyro bias calibration complete:\n");
+    rt_kprintf("  Valid samples: %d/%d\n", valid_samples, samples);
+    rt_kprintf("  X: ");
+    print_float(gyro_bias[0], 9, 2, 1);
+    rt_kprintf("    Y: ");
+    print_float(gyro_bias[1], 9, 2, 1);
+    rt_kprintf("    Z: ");
+    print_float(gyro_bias[2], 9, 2, 1);
+    rt_kprintf("\n");
 }
 
 
@@ -827,6 +830,7 @@ static void imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
 void qmi8658_imu_thread_entry(void* parameter)
 {
     QmiDataDecoded_t data;
+		QmiDataRaw_t raw;
     static rt_uint32_t print_counter = 0;
     
     rt_kprintf("[QMI8658] IMU thread started\n");
@@ -837,13 +841,27 @@ void qmi8658_imu_thread_entry(void* parameter)
         rt_sem_take(&s_data_ready_sem, RT_WAITING_FOREVER);
 
         
-        /* Read sensor data immediately after interrupt */
-        qmi8658_read_once(RT_NULL, &data);
-        
+        /* Read sensor data immediately after interrupt */		
+//				qmi8658_read_once(&raw, &data);
+			if(s_report_raw){
+				qmi8658_read_once(&raw, RT_NULL);
+				s_latest_data.acc_x_g = raw.element.accel.x;
+				s_latest_data.acc_y_g = raw.element.accel.y;			
+				s_latest_data.acc_z_g = raw.element.accel.z;       		
+				s_latest_data.gyro_x_deg = raw.element.gyro.x;
+				s_latest_data.gyro_y_deg = raw.element.gyro.y;
+				s_latest_data.gyro_z_deg = raw.element.gyro.z;
+				s_latest_data.pitch = 0.0f;
+        s_latest_data.roll  = 0.0f;
+        s_latest_data.yaw   = 0.0f;
+			}else{
+        qmi8658_read_once(RT_NULL, &data);			
+				s_latest_data = data;		
+			}
+			
         s_imu.interrupt_count++;
         
-			// 更新全局缓存（用锁保护，或直接赋值，因为单线程写）
-        s_latest_data = data;
+
         /* Print every 100ms (~10Hz printing rate) */
       if(s_print_enabled)
       {
@@ -854,34 +872,54 @@ void qmi8658_imu_thread_entry(void* parameter)
                        rt_tick_get() / RT_TICK_PER_SECOND * 1000 + 
                        (rt_tick_get() % RT_TICK_PER_SECOND) * 1000 / RT_TICK_PER_SECOND);
             
-						rt_kprintf("ACC (g):   X: ");
-						print_float(data.acc_x_g, 6, 3, 1);
-						rt_kprintf("   Y: ");
-						print_float(data.acc_y_g, 6, 3, 1);
-						rt_kprintf("   Z: ");
-						print_float(data.acc_z_g, 6, 3, 1);
-						rt_kprintf("\n");
-
-						rt_kprintf("GYRO (deg/s): X: ");
-						print_float(data.gyro_x_deg, 7, 2, 1);
-						rt_kprintf("   Y: ");
-						print_float(data.gyro_y_deg, 7, 2, 1);
-						rt_kprintf("   Z: ");
-						print_float(data.gyro_z_deg, 7, 2, 1);
-						rt_kprintf("\n");
-
-						rt_kprintf("Euler:  Pitch: ");
-						print_float(data.pitch, 6, 2, 1);
-						rt_kprintf("°   Roll: ");
-						print_float(data.roll, 6, 2, 1);
-						rt_kprintf("°   Yaw: ");
-						print_float(data.yaw, 6, 2, 0);
-						rt_kprintf("°\n");
-            rt_kprintf("Samples: %lu | Interrupts: %lu\n", 
-                       s_imu.sample_count, s_imu.interrupt_count);
-            rt_kprintf("==========================================\n\n");
-            
-            print_counter = 0;
+						if (s_report_raw) {
+                    // 打印原始物理值（加速度/g，陀螺仪/dps）
+                    rt_kprintf("RAW ACC (g):   X: ");
+                    print_float(raw.element.accel.x, 6, 3, 1);
+                    rt_kprintf("   Y: ");
+                    print_float(raw.element.accel.y, 6, 3, 1);
+                    rt_kprintf("   Z: ");
+                    print_float(raw.element.accel.z, 6, 3, 1);
+                    rt_kprintf("\n");
+                    
+                    rt_kprintf("RAW GYRO (deg/s): X: ");
+                    print_float(raw.element.gyro.x, 7, 2, 1);
+                    rt_kprintf("   Y: ");
+                    print_float(raw.element.gyro.y, 7, 2, 1);
+                    rt_kprintf("   Z: ");
+                    print_float(raw.element.gyro.z, 7, 2, 1);
+                    rt_kprintf("\n");
+                } else {
+                    // 打印解码数据（含欧拉角）
+                    rt_kprintf("ACC (g):   X: ");
+                    print_float(data.acc_x_g, 6, 3, 1);
+                    rt_kprintf("   Y: ");
+                    print_float(data.acc_y_g, 6, 3, 1);
+                    rt_kprintf("   Z: ");
+                    print_float(data.acc_z_g, 6, 3, 1);
+                    rt_kprintf("\n");
+                    
+                    rt_kprintf("GYRO (deg/s): X: ");
+                    print_float(data.gyro_x_deg, 7, 2, 1);
+                    rt_kprintf("   Y: ");
+                    print_float(data.gyro_y_deg, 7, 2, 1);
+                    rt_kprintf("   Z: ");
+                    print_float(data.gyro_z_deg, 7, 2, 1);
+                    rt_kprintf("\n");
+                    
+                    rt_kprintf("Euler:  Pitch: ");
+                    print_float(data.pitch, 6, 2, 1);
+                    rt_kprintf("°   Roll: ");
+                    print_float(data.roll, 6, 2, 1);
+                    rt_kprintf("°   Yaw: ");
+                    print_float(data.yaw, 6, 2, 0);
+                    rt_kprintf("°\n");
+                }
+								rt_kprintf("Samples: %lu | Interrupts: %lu\n", 
+                           s_imu.sample_count, s_imu.interrupt_count);
+                rt_kprintf("==========================================\n\n");
+                 
+							print_counter = 0;
         }
 	    }
     }
@@ -925,9 +963,9 @@ int qmi8658_init(void)
     rt_err_t err;
     uint8_t whoami;
     uint8_t rev_id;
-    
+// 		imu_recover_i2c_bus();          // 先恢复总线
+		rt_thread_mdelay(500);		   
     rt_kprintf("\n========== QMI8658 v7.0 Init (Official Registers) ========== \n");
-    
 		s_i2c_dev = (struct rt_i2c_bus_device*)rt_device_find(QMI8658_I2C_BUS);
 		if (s_i2c_dev == RT_NULL) {
 				rt_kprintf("[QMI8658] ERROR: I2C bus '%s' not found!\n", QMI8658_I2C_BUS);
@@ -935,6 +973,9 @@ int qmi8658_init(void)
 		} else {
 				rt_kprintf("[QMI8658] I2C bus '%s' found.\n", QMI8658_I2C_BUS);
 		}
+		    rt_kprintf("[QMI8658] Performing I2C bus reset...\n");
+		
+
 		imu_i2c_write_reg(QMI8658_REG_RESET, 0xB0);
     rt_thread_mdelay(50);
         
@@ -1006,7 +1047,12 @@ int qmi8658_init(void)
 		    /* **自检**  */
    // qmi8658_Check_Alive(50);
 		
-    rt_thread_mdelay(20);
+    rt_thread_mdelay(500);
+// 调整 Mahony 滤波器参数并开启静止零偏校准
+    extern volatile float twoKp, twoKi;
+    twoKp = 2.0f;
+    twoKi = 0.002f;
+		imu_calibrate_gyro_bias(200);
     
     /* Create and start IMU thread for continuous sampling */
     qmi8658_create_imu_thread();
@@ -1036,56 +1082,61 @@ int qmi8658_read_once(QmiDataRaw_t* raw, QmiDataDecoded_t* decoded)
     
     imu_read_xyz(acc, gyro, s_imu.layout);
     
-    if(raw)
-    {
-        raw->acc_x = (int16_t)(acc[0] * s_imu.ssvt_a);
-        raw->acc_y = (int16_t)(acc[1] * s_imu.ssvt_a);
-        raw->acc_z = (int16_t)(acc[2] * s_imu.ssvt_a);
-        raw->gyro_x = (int16_t)(gyro[0] * s_imu.ssvt_g);
-        raw->gyro_y = (int16_t)(gyro[1] * s_imu.ssvt_g);
-        raw->gyro_z = (int16_t)(gyro[2] * s_imu.ssvt_g);
-    }
+		if (raw)
+		{
+				raw->element.accel.x = acc[0];
+				raw->element.accel.y = acc[1];
+				raw->element.accel.z = acc[2];
+				raw->element.gyro.x = gyro[0];
+				raw->element.gyro.y = gyro[1];
+				raw->element.gyro.z = gyro[2];
+		}
     
     if(decoded)
     {
-//			decoded->pitch = 0;
-//		  decoded->roll = 0;
-//			decoded->yaw = 0;
-//			if(s_print_enabled)    // 在开启调试打印时，才开启mahony滤波器转换为pitch, roll,yaw直观展示
-			if(1)
-			{
-					float acc_mag = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
-					float acc_norm[3];
+				float acc_mag = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+				float acc_norm[3];
+				
+				if(acc_mag > 0.01f)
+				{
+						acc_norm[0] = acc[0] / acc_mag;
+						acc_norm[1] = acc[1] / acc_mag;
+						acc_norm[2] = acc[2] / acc_mag;
+				}
+				else
+				{
+						acc_norm[0] = 0; acc_norm[1] = 0; acc_norm[2] = 1;
+				}
+				
+				float gyro_rad[3] = {
+						(gyro[0] - gyro_bias[0]) * 0.0174533f,
+						(gyro[1] - gyro_bias[1]) * 0.0174533f,
+						(gyro[2] - gyro_bias[2]) * 0.0174533f
+				};
+								
+				// 调用标准 Mahony 融合函数（仅 IMU）
+        MahonyAHRSupdateIMU(gyro_rad[0], gyro_rad[1], gyro_rad[2],
+                            acc_norm[0], acc_norm[1], acc_norm[2]);
+				// 从全局四元数提取欧拉角（注意：q0,q1,q2,q3 是 MahonyAHRS.c 中的全局变量）
+        extern volatile float q0, q1, q2, q3;   // 声明外部变量
+        float roll  = atan2f(2.0f*(q2*q3 + q0*q1), -2.0f*(q1*q1 + q2*q2) + 1.0f) * 57.29578f;
+        float pitch = asinf(-2.0f*(q1*q3 - q0*q2)) * 57.29578f;   // 注意符号与您之前可能不同
+        float yaw   = atan2f(2.0f*(q1*q2 + q0*q3), -2.0f*(q2*q2 + q3*q3) + 1.0f) * 57.29578f;
+        decoded->pitch = pitch;
+        decoded->roll  = roll;
+        decoded->yaw   = yaw;					
+//				EulerAngles ea = get_euler_angles(gyro_rad[0], gyro_rad[1],gyro_rad[2], acc_norm[0], acc_norm[1], acc_norm[2]);										
+//        decoded->pitch = ea.pitch;
+//        decoded->roll  = ea.roll;
+//        decoded->yaw   = ea.yaw;
 					
-					if(acc_mag > 0.01f)
-					{
-							acc_norm[0] = acc[0] / acc_mag;
-							acc_norm[1] = acc[1] / acc_mag;
-							acc_norm[2] = acc[2] / acc_mag;
-					}
-					else
-					{
-							acc_norm[0] = 0; acc_norm[1] = 0; acc_norm[2] = 1;
-					}
-					
-					float gyro_rad[3] = {
-							gyro[0] * 0.0174533f,
-							gyro[1] * 0.0174533f,
-							gyro[2] * 0.0174533f
-					};
-					
-					mahony_ahrs(gyro_rad[0], gyro_rad[1], gyro_rad[2],
-										 acc_norm[0], acc_norm[1], acc_norm[2],
-										 &decoded->pitch, &decoded->roll, &decoded->yaw);
-			 }
         decoded->acc_x_g = acc[0];
         decoded->acc_y_g = acc[1];
         decoded->acc_z_g = acc[2];
         decoded->gyro_x_deg = gyro[0];
         decoded->gyro_y_deg = gyro[1];
         decoded->gyro_z_deg = gyro[2];
-    }
-    
+			}  
     s_imu.interrupt_count++;
     
     return RT_EOK;
@@ -1183,7 +1234,7 @@ void qmi8658_self_calibrate(void)
     imu_i2c_write_reg(QMI8658_REG_CTRL9, (uint8_t)qmi8658_Ctrl9_Cmd_On_Demand_Cali);
     rt_thread_mdelay(2200);
     
-    imu_i2c2c_write_reg(QMI8658_REG_CTRL9, (uint8_t)qmi8658_Ctrl9_Cmd_NOP);
+    imu_i2c_write_reg(QMI8658_REG_CTRL9, (uint8_t)qmi8658_Ctrl9_Cmd_NOP);
     rt_thread_mdelay(100);
     
     rt_kprintf("[QMI8658] Calibration complete!\n");
@@ -1348,6 +1399,27 @@ static int imu_print(int argc, char** argv)
     
     return RT_EOK;
 }
+
+static int imu_report_mode(int argc, char** argv)
+{
+    if (argc > 1) {
+        if (strcmp(argv[1], "raw") == 0) {
+            s_report_raw = RT_TRUE;
+            rt_kprintf("[QMI8658] report mode: raw data\n");
+        } else if (strcmp(argv[1], "decoded") == 0) {
+            s_report_raw = RT_FALSE;
+            rt_kprintf("[QMI8658] report mode: decoded data\n");
+        } else {
+            rt_kprintf("[QMI8658] Usage: imu_print_mode [raw|decoded]\n");
+            return -RT_ERROR;
+        }
+    } else {
+        rt_kprintf("[QMI8658] Current report mode: %s\n", s_report_raw ? "raw" : "decoded");
+    }
+    return RT_EOK;
+}
+MSH_CMD_EXPORT(imu_report_mode, "Switch report mode (raw/decoded)");
+
 MSH_CMD_EXPORT(imu_read, "Read QMI8658 v7.0 data");
 MSH_CMD_EXPORT(imu_status, "Show QMI8658 v7.0 status");
 MSH_CMD_EXPORT(imu_rev, "Show chip revision info");

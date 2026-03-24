@@ -21,6 +21,8 @@
 #include <string.h>
 #include <u8g2.h>
 #include <stdlib.h>
+#include "qmi8658.h"
+#include <math.h>
 /**
  * ========== Global Variables ==========
  */
@@ -91,7 +93,44 @@ static void oled_key_task(void *parameter);
 /**
  * ========== Public Functions ==========
  */
+/**
+ * @brief 将浮点数格式化为字符串（不打印）
+ * @param value 要格式化的浮点数
+ * @param buf 输出缓冲区
+ * @param width 总宽度（右对齐，若实际宽度不足则用空格填充，设为0表示无宽度控制）
+ * @param precision 小数位数（0-6）
+ * @param sign 是否显示正号（1: 显示+号，0: 负数自动显示-号，正数不显示+）
+ */
+static void format_float(float value, char *buf, int width, int precision, int sign)
+{
+    int integer_part, decimal_part;
+    int negative = (value < 0);
+    if (negative) value = -value;
 
+    integer_part = (int)value;
+    decimal_part = (int)((value - integer_part) * powf(10, precision) + 0.5f);
+    if (decimal_part >= (int)powf(10, precision)) {
+        decimal_part -= (int)powf(10, precision);
+        integer_part++;
+    }
+
+    // 格式化字符串
+    int len = rt_snprintf(buf, 32, "%s%d.%0*d",
+                          (negative ? "-" : (sign ? "+" : "")),
+                          integer_part,
+                          precision,
+                          decimal_part);
+    // 如果需要右对齐且宽度 > len，则前移指针
+    if (width > len && width > 0) {
+        int pad = width - len;
+        for (int i = len; i >= 0; i--) {
+            buf[i + pad] = buf[i];
+        }
+        for (int i = 0; i < pad; i++) {
+            buf[i] = ' ';
+        }
+    }
+}
 /**
  * @brief OLED hardware initialization
  */
@@ -582,7 +621,7 @@ static void render_home_page(u8g2_t* u8g2)
     draw_battery_indicator(90, 15);  // 位置微调，避免覆盖页码
     
     u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
-   uint8_t y = 30;  // 起始 Y 坐标，从标题栏下方开始
+   uint8_t y = 30;  // 起始Y坐标，从标题栏下方开始
 
     // 电池电压
     long bat_v = g_oled_battery_mv / 1000;
@@ -725,18 +764,96 @@ static void render_imu_data_page(u8g2_t* u8g2)
     
      u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
     uint8_t y = 30;
-    int8_t pitch = 2, yaw = -1, roll = 1;
-    char imustr[20];
-    rt_snprintf(imustr, sizeof(imustr), "Pitch: %+3d", pitch);
-    u8g2_DrawStr(u8g2, 8, y, imustr);
-    y += 10;
-    rt_snprintf(imustr, sizeof(imustr), "Roll:  %+3d", roll);
-    u8g2_DrawStr(u8g2, 8, y, imustr);
-    y += 10;
-    rt_snprintf(imustr, sizeof(imustr), "Yaw:   %+3d", yaw);
-    u8g2_DrawStr(u8g2, 8, y, imustr);
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Status: Calibrated");
+		
+	   if(s_report_raw) {
+        // 显示原始加速度和陀螺仪
+//        char buf[32];
+//			 	int acc_x = s_latest_data.acc_x_g*1000;
+//				int acc_y = s_latest_data.acc_y_g*1000; 
+//				int acc_z = s_latest_data.acc_z_g*1000;
+//        rt_snprintf(buf, sizeof(buf), "ACC: X%+4d/1000",
+//                    acc_x);
+//        u8g2_DrawStr(u8g2, 0, y, buf);
+//        rt_snprintf(buf, sizeof(buf), "Y%+4d/1000 Z%+4d/1000",
+//                    acc_y, acc_z);
+//        y += 10;
+//				u8g2_DrawStr(u8g2, 0, y, buf);
+//				
+//			 	int gyro_x = s_latest_data.gyro_x_deg*100;
+//				int gyro_y = s_latest_data.gyro_y_deg*100; 
+//				int gyro_z = s_latest_data.gyro_z_deg*100;				
+//        rt_snprintf(buf, sizeof(buf), "GYRO:X%+3d/100",
+//                    gyro_x);
+//        y += 12;
+//				u8g2_DrawStr(u8g2, 0, y, buf);
+//        rt_snprintf(buf, sizeof(buf), "Y%+3d/100 Z%+3d/100",
+//                    gyro_y, gyro_z);
+//        y += 10;
+//				u8g2_DrawStr(u8g2, 0, y, buf);				
+       // 显示原始加速度和陀螺仪（浮点形式）
+        char buf[48];
+        // 加速度一行
+        format_float(s_latest_data.acc_x_g, buf, 0, 3, 1);
+        u8g2_DrawStr(u8g2, 0, y, "ACC X:");
+        u8g2_DrawStr(u8g2, 50, y, buf);
+        y += 10;				
+        format_float(s_latest_data.acc_y_g, buf, 0, 3, 1);
+				u8g2_DrawStr(u8g2, 0, y, "Y:");
+        u8g2_DrawStr(u8g2, 20, y, buf);        				
+
+        format_float(s_latest_data.acc_z_g, buf, 0, 3, 1);
+        u8g2_DrawStr(u8g2, 70, y, "Z:");
+        u8g2_DrawStr(u8g2, 90, y, buf);
+        y += 10;
+
+        // 陀螺仪一行
+        format_float(s_latest_data.gyro_x_deg, buf, 0, 1, 1);
+        u8g2_DrawStr(u8g2, 0, y, "GYRO X:");
+        u8g2_DrawStr(u8g2, 50, y, buf);
+				y += 10;
+        format_float(s_latest_data.gyro_y_deg, buf, 0, 1, 1);
+        u8g2_DrawStr(u8g2, 0, y, "Y:");
+        u8g2_DrawStr(u8g2, 20, y, buf);        				
+
+        format_float(s_latest_data.gyro_z_deg, buf, 0, 1, 1);
+        u8g2_DrawStr(u8g2, 70, y, "Z:");
+        u8g2_DrawStr(u8g2, 90, y, buf);
+				
+    } else {
+//				int pitch = s_latest_data.pitch*100;
+//				int yaw = s_latest_data.yaw*100; 
+//				int roll = s_latest_data.roll*100;
+//				 
+//				char imustr[20];
+//				rt_snprintf(imustr, sizeof(imustr), "Pitch: %+5d/100", pitch);
+//				u8g2_DrawStr(u8g2, 8, y, imustr);
+//				y += 10;
+//				rt_snprintf(imustr, sizeof(imustr), "Roll:  %+5d/100", roll);
+//				u8g2_DrawStr(u8g2, 8, y, imustr);
+//				y += 10;
+//				rt_snprintf(imustr, sizeof(imustr), "Yaw:   %+5d/100", yaw);
+//				u8g2_DrawStr(u8g2, 8, y, imustr);
+//				y += 10;
+//				u8g2_DrawStr(u8g2, 8, y, "Status: Calibrated");
+			      // 显示欧拉角（浮点形式）
+        char buf[24];
+        format_float(s_latest_data.pitch, buf, 6, 2, 1);
+        u8g2_DrawStr(u8g2, 8, y, "Pitch: ");
+        u8g2_DrawStr(u8g2, 70, y, buf);
+        u8g2_DrawStr(u8g2, 110, y, "°");
+        y += 10;
+        format_float(s_latest_data.roll, buf, 6, 2, 1);
+        u8g2_DrawStr(u8g2, 8, y, "Roll:  ");
+        u8g2_DrawStr(u8g2, 70, y, buf);
+        u8g2_DrawStr(u8g2, 110, y, "°");
+        y += 10;
+        format_float(s_latest_data.yaw, buf, 6, 2, 0);
+        u8g2_DrawStr(u8g2, 8, y, "Yaw:   ");
+        u8g2_DrawStr(u8g2, 70, y, buf);
+        u8g2_DrawStr(u8g2, 110, y, "°");
+        y += 10;
+        u8g2_DrawStr(u8g2, 8, y, "Status: Calibrated");
+    }
 }
 
 static void render_fault_log_page(u8g2_t* u8g2)

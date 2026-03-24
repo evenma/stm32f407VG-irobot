@@ -161,7 +161,7 @@ enum qmi8658_GyrOdr
 #define QMI8658_GYRO_LPF      Qmi8658Lpf_Enable  //Qmi8658Lpf_Disable //Qmi8658Lpf_Enable         /* Enable LPF */
 #define QMI8658_GYRO_ST       Qmi8658St_Disable         /* Disable self-test */
 
-#define QMI8658_gST						(0x80)		/* Bit 7:  Enable  Gyro Self-Test */
+#define QMI8658_gST						(0x80)		/* Bit 7: Enable  Gyro Self-Test */
 
 /* ========== LPF Configuration (Ctrl5 = 0x06) ========== */
 #define QMI8658_aLPF_EN    (0x01)    /* Bit 0:  Enable Accelerometer Low-Pass Filter with the mode given by aLPF_MODE */
@@ -220,17 +220,24 @@ enum qmi8658_Ctrl9Command
 /**
  * @brief Raw 6-axis sensor data
  */
-typedef struct
-{
-    int16_t acc_x;          /* X-axis accelerometer (raw LSB) */
-    int16_t acc_y;          /* Y-axis accelerometer (raw LSB) */
-    int16_t acc_z;          /* Z-axis accelerometer (raw LSB) */
-    
-    int16_t gyro_x;         /* X-axis gyroscope (raw LSB) */
-    int16_t gyro_y;         /* Y-axis gyroscope (raw LSB) */
-    int16_t gyro_z;         /* Z-axis gyroscope (raw LSB) */
+typedef union  {
+    struct {
+		float accel_array[3];
+		float gyro_array[3];
+	}array;
+    struct {
+        struct {
+            float x;
+            float y;
+            float z;
+        } accel;
+        struct {
+            float x;
+            float y;
+            float z;
+        } gyro;
+    } element;
 } QmiDataRaw_t;
-
 
 /**
  * @brief Decoded physical data with Euler angles
@@ -250,6 +257,12 @@ typedef struct
     float yaw;              /* Yaw angle (-180°~+180°) */
 } QmiDataDecoded_t;
 
+typedef struct
+{
+	float roll;
+  float pitch;
+  float yaw ;
+} EulerAngles;
 
 /* ========== Internal Object Structure ========== */
 
@@ -291,7 +304,8 @@ int qmi8658_quick_calibrate(rt_uint16_t timeout_ms);
 void qmi8658_set_layout(uint8_t layout);
 uint8_t qmi8658_read_revision(void);
 rt_err_t qmi8658_validate_connection(int max_attempts);
-
+extern QmiDataDecoded_t s_latest_data;
+extern rt_bool_t s_report_raw;
 /* MSH Debug Commands */
 #ifdef RT_USING_MSH
 extern void msh_qmi_read(int argc, char** argv);
