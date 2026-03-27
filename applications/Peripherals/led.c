@@ -228,25 +228,17 @@ static void led_send_to_spi(void)
  */
 int led_set_color(rt_uint8_t id, LedColorState_t state)
 {
-    if (!s_initialized)
-    {
-        rt_kprintf("[LED] Error: Not initialized yet!\n");
-        return -RT_ERROR;
-    }
-    
-    if (id >= LED_TOTAL_COUNT)
-    {
-        rt_kprintf("[LED] Error: Invalid ID %d\n", id);
-        return -RT_ERROR;
-    }
-    
+    if (!s_initialized) return -RT_ERROR;
+    if (id >= LED_TOTAL_COUNT) return -RT_ERROR;
+
+    /* 状态无变化则直接返回 */
+    if (led_objects[id].color_state == state)
+        return RT_EOK;
+
     led_objects[id].color_state = state;
-    
-    /* Update shift register and send immediately */
     led_update_shift_register();
     led_send_to_spi();
-    
-    return 0;
+    return RT_EOK;
 }
 
 
@@ -479,7 +471,7 @@ void led_set_battery_low(rt_bool_t low)
         return;
     }
     
-    LedColorState_t state = low ? LED_COLOR_FLASH_FAST : LED_COLOR_OFF;
+    LedColorState_t state = low ? LED_COLOR_RED_ON : LED_COLOR_OFF;
     led_set_color(LED_IDX_LOW_BAT_RED, state);
 }
 
@@ -511,7 +503,7 @@ void led_set_water_low(rt_bool_t low)
         return;
     }
     
-    LedColorState_t state = low ? LED_COLOR_FLASH_SLOW : LED_COLOR_OFF;
+    LedColorState_t state = low ? LED_COLOR_RED_ON : LED_COLOR_OFF;
     led_set_color(LED_IDX_LOW_WATER_RED, state);
 }
 

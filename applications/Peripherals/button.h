@@ -174,3 +174,4 @@ rt_sem_t button_get_home_semaphore(void);
 
 
 #endif /* PERIPHERALS_BUTTON_H__ */
+

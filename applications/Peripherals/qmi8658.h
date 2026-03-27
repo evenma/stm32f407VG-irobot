@@ -122,7 +122,7 @@ enum qmi8658_StConfig
 /* Default ACC configuration - UPDATED */
 #define QMI8658_ACCEL_RANGE    Qmi8658AccRange_4g    /* ±4g (user requirement) */
 #define QMI8658_ACCEL_ODR      Qmi8658AccOdr_250Hz   /* 250Hz (user requirement) */
-#define QMI8658_ACCEL_LPF      Qmi8658Lpf_Enable // Qmi8658Lpf_Disable	//Qmi8658Lpf_Enable     /* Enable LPF */
+#define QMI8658_ACCEL_LPF      Qmi8658Lpf_Disable	//Qmi8658Lpf_Enable     /* Enable LPF */
 #define QMI8658_ACCEL_ST       Qmi8658St_Disable     /* Disable self-test */
 
 #define QMI8658_aST						(0x80)		/* Bit 7: Enable Accelerometer Self-Test */
@@ -158,7 +158,7 @@ enum qmi8658_GyrOdr
 /* Default GYRO configuration - UPDATED */
 #define QMI8658_GYRO_RANGE    Qmi8658GyrRange_128dps //Qmi8658GyrRange_2048dps   /* ±2048 dps max */
 #define QMI8658_GYRO_ODR      Qmi8658GyrOdr_250Hz       /* 250Hz */
-#define QMI8658_GYRO_LPF      Qmi8658Lpf_Enable  //Qmi8658Lpf_Disable //Qmi8658Lpf_Enable         /* Enable LPF */
+#define QMI8658_GYRO_LPF      Qmi8658Lpf_Disable //Qmi8658Lpf_Enable         /* Enable LPF */
 #define QMI8658_GYRO_ST       Qmi8658St_Disable         /* Disable self-test */
 
 #define QMI8658_gST						(0x80)		/* Bit 7: Enable  Gyro Self-Test */

@@ -1,243 +1,612 @@
-/*
- * Copyright (c) 2006-2018, RT-Thread Development Team
+/**
+ * @file    main.c
+ * @brief   iRobot_baseboard 主程序入口
+ * @version 1.0
+ * @date    2026-03-26
+ * @author  马哥
  *
- * SPDX-License-Identifier: Apache-2.0
- *
- * Change Logs:
- * Date           Author       Notes
- * 2018-11-06     SummerGift   first version
- * 2026-03-14     Wuji         Added buzzer support
- * 2026-03-14     Wuji         Integrated LED driver v1.0.7
- * 2026-03-14     Wuji         Integrated OLED display system v1.0.8
- * 2026-03-14     Wuji         Integrated QMI8658 IMU sensor v1.0.9
- * 2026-03-14     Wuji         Integrated RS485 ultrasonic sensor v1.0.10
- * 2026-03-14     Wuji         Integrated WonderEcho AI voice module v1.0.11
- * 2026-03-14     Wuji         Integrated CANopen motor driver v1.0.11
+ * @note
+ * - RT-Thread RTOS 主程序入口
+ * - 系统初始化
+ * - 任务创建
+ * - 主循环
  */
 
 #include <rtthread.h>
-#include <rtdevice.h>
-#include <board.h>
-
-#include "fal.h"
-#include "buzzer.h"
-#include "led.h"
-#include "oled_handle.h"
-#include "qmi8658.h"
-#include "rs485_ultrasonic.h"
-#include "wonder_echo.h"        // ⭐ NEW: AI 语音交互模块
-#include "canopen_motor.h"      // ⭐ NEW: CANopen 电机驱动
 #include "global_conf.h"
 
-
-#define LOG_TAG "main.tag"
-#define LOG_LVL LOG_LVL_DBG
+#ifdef ULOG_ENABLE
 #include <ulog.h>
+#else
+#define LOG_E(...)
+#define LOG_W(...)
+#define LOG_I(...)
+#define LOG_D(...)
+#define LOG_RAW(...)
+#endif
 
-#define APP_VERSION "1.0.11"    /* V1.0.11 - Voice + Motor integrated */
+/* 任务句柄 */
+static rt_thread_t tid_monitor = RT_NULL;
+static rt_thread_t tid_oled = RT_NULL;
+static rt_thread_t tid_led = RT_NULL;
+static rt_thread_t tid_packet = RT_NULL;
+static rt_thread_t tid_ble = RT_NULL;
+static rt_thread_t tid_can = RT_NULL;
+static rt_thread_t tid_motor = RT_NULL;
+static rt_thread_t tid_ai_voice = RT_NULL;
+static rt_thread_t tid_charger = RT_NULL;
+static rt_thread_t tid_sensor = RT_NULL;
 
+/* 队列句柄 */
+static rt_queue_t queue_packet = RT_NULL;
+static rt_queue_t queue_ble = RT_NULL;
+static rt_queue_t queue_sensor = RT_NULL;
+
+/* 信号量句柄 */
+static rt_sem_t sem_can = RT_NULL;
+static rt_sem_t sem_motor = RT_NULL;
+
+/* 系统状态 */
+app_state_t g_app_state = APP_STATE_INIT;
+component_state_t g_component_state = COMPONENT_OFF;
+comm_state_t g_comm_state = COMM_STATE_DISCONNECTED;
+
+/* 任务状态 */
+task_state_t g_task_state = TASK_STOPPED;
+
+/* 版本信息 */
+const char *g_app_version_string = RT_STRINGIFY(APP_VERSION_MAJOR) "." RT_STRINGIFY(APP_VERSION_MINOR) "." RT_STRINGIFY(APP_VERSION_PATCH);
+const char *g_app_name_string = APP_NAME;
+const char *g_app_vendor_string = APP_VENDOR;
+
+/*============================================================================*/
+/* 任务函数声明 */
+/*============================================================================*/
+
+static void monitor_task(void *parameter);
+static void oled_task(void *parameter);
+static void led_task(void *parameter);
+static void packet_task(void *parameter);
+static void ble_task(void *parameter);
+static void can_task(void *parameter);
+static void motor_task(void *parameter);
+static void ai_voice_task(void *parameter);
+static void charger_task(void *parameter);
+static void sensor_task(void *parameter);
+
+/*============================================================================*/
+/* 系统初始化函数 */
+/*============================================================================*/
+
+/**
+ * @brief 系统初始化
+ */
+static void system_init(void)
+{
+    LOG_I("========================================");
+    LOG_I("iRobot_baseboard System Init");
+    LOG_I("========================================");
+    LOG_I("Version: %s", g_app_version_string);
+    LOG_I("Vendor:  %s", g_app_vendor_string);
+
+    /* 初始化系统状态 */
+    g_app_state = APP_STATE_POWER_ON;
+    g_component_state = COMPONENT_OFF;
+    g_comm_state = COMM_STATE_DISCONNECTED;
+    g_task_state = TASK_STOPPED;
+
+    LOG_I("System initialized successfully");
+}
+
+/**
+ * @brief 创建队列
+ */
+static void create_queues(void)
+{
+    /* Packet通讯队列 */
+#if PACKET_PROTOCOL_ENABLE
+    queue_packet = rt_queue_create("packet_q", PACKET_QUEUE_SIZE * sizeof(uint8_t),
+                                    RT_IPC_FLAG_FIFO);
+    if (queue_packet == RT_NULL) {
+        LOG_E("Failed to create packet queue");
+        return;
+    }
+    LOG_I("Packet queue created: %d items", PACKET_QUEUE_SIZE);
+#endif
+
+    /* 蓝牙通讯队列 */
+#if BLE_ENABLE
+    queue_ble = rt_queue_create("ble_q", BLE_QUEUE_SIZE * sizeof(uint8_t),
+                                 RT_IPC_FLAG_FIFO);
+    if (queue_ble == RT_NULL) {
+        LOG_E("Failed to create BLE queue");
+        return;
+    }
+    LOG_I("BLE queue created: %d items", BLE_QUEUE_SIZE);
+#endif
+
+    /* 传感器数据队列 */
+#if US_ENABLE
+    queue_sensor = rt_queue_create("sensor_q", SENSOR_QUEUE_SIZE * sizeof(uint16_t),
+                                    RT_IPC_FLAG_FIFO);
+    if (queue_sensor == RT_NULL) {
+        LOG_E("Failed to create sensor queue");
+        return;
+    }
+    LOG_I("Sensor queue created: %d items", SENSOR_QUEUE_SIZE);
+#endif
+}
+
+/**
+ * @brief 创建信号量
+ */
+static void create_semaphores(void)
+{
+    /* CAN通讯信号量 */
+#if CAN_ENABLE
+    sem_can = rt_sem_create("can_sem", 1, RT_IPC_FLAG_FIFO);
+    if (sem_can == RT_NULL) {
+        LOG_E("Failed to create CAN semaphore");
+        return;
+    }
+    LOG_I("CAN semaphore created");
+#endif
+
+    /* 电机控制信号量 */
+#if TASK_MOTOR_ENABLE
+    sem_motor = rt_sem_create("motor_sem", 1, RT_IPC_FLAG_FIFO);
+    if (sem_motor == RT_NULL) {
+        LOG_E("Failed to create motor semaphore");
+        return;
+    }
+    LOG_I("Motor semaphore created");
+#endif
+
+    /* CAN驱动初始化 */
+#if CAN_ENABLE
+    if (irobot_can_init() != RT_EOK) {
+        LOG_E("Failed to initialize CAN driver");
+        return;
+    }
+    LOG_I("CAN driver initialized");
+#endif
+}
+
+/**
+ * @brief 创建任务
+ */
+static void create_tasks(void)
+{
+    /* 监视任务 */
+#if TASK_MONITOR_ENABLE
+    tid_monitor = rt_thread_create("monitor",
+                                    monitor_task, RT_NULL,
+                                    TASK_MONITOR_STACK_SIZE,
+                                    TASK_MONITOR_PRIORITY,
+                                    20);
+    if (tid_monitor != RT_NULL) {
+        rt_thread_startup(tid_monitor);
+    } else {
+        LOG_E("Failed to create monitor task");
+    }
+#endif
+
+    /* OLED显示任务 */
+#if TASK_OLED_ENABLE
+    tid_oled = rt_thread_create("oled",
+                                oled_task, RT_NULL,
+                                TASK_OLED_STACK_SIZE,
+                                TASK_OLED_PRIORITY,
+                                20);
+    if (tid_oled != RT_NULL) {
+        rt_thread_startup(tid_oled);
+    } else {
+        LOG_E("Failed to create OLED task");
+    }
+#endif
+
+    /* LED指示灯任务 */
+#if TASK_LED_ENABLE
+    tid_led = rt_thread_create("led",
+                               led_task, RT_NULL,
+                               TASK_LED_STACK_SIZE,
+                               TASK_LED_PRIORITY,
+                               20);
+    if (tid_led != RT_NULL) {
+        rt_thread_startup(tid_led);
+    } else {
+        LOG_E("Failed to create LED task");
+    }
+#endif
+
+    /* Packet通讯任务 */
+#if TASK_PACKET_ENABLE
+    tid_packet = rt_thread_create("packet",
+                                  packet_task, RT_NULL,
+                                  TASK_PACKET_STACK_SIZE,
+                                  TASK_PACKET_PRIORITY,
+                                  20);
+    if (tid_packet != RT_NULL) {
+        rt_thread_startup(tid_packet);
+    } else {
+        LOG_E("Failed to create packet task");
+    }
+#endif
+
+    /* 蓝牙任务 */
+#if TASK_BLE_ENABLE
+    tid_ble = rt_thread_create("ble",
+                               ble_task, RT_NULL,
+                               TASK_BLE_STACK_SIZE,
+                               TASK_BLE_PRIORITY,
+                               20);
+    if (tid_ble != RT_NULL) {
+        rt_thread_startup(tid_ble);
+    } else {
+        LOG_E("Failed to create BLE task");
+    }
+#endif
+
+    /* CAN通讯任务 */
+#if TASK_CAN_ENABLE
+    tid_can = rt_thread_create("can",
+                               can_task, RT_NULL,
+                               TASK_CAN_STACK_SIZE,
+                               TASK_CAN_PRIORITY,
+                               20);
+    if (tid_can != RT_NULL) {
+        rt_thread_startup(tid_can);
+    } else {
+        LOG_E("Failed to create CAN task");
+    }
+#endif
+
+    /* 电机控制任务 */
+#if TASK_MOTOR_ENABLE
+    tid_motor = rt_thread_create("motor",
+                                 motor_task, RT_NULL,
+                                 TASK_MOTOR_STACK_SIZE,
+                                 TASK_MOTOR_PRIORITY,
+                                 20);
+    if (tid_motor != RT_NULL) {
+        rt_thread_startup(tid_motor);
+    } else {
+        LOG_E("Failed to create motor task");
+    }
+#endif
+
+    /* AI语音任务 */
+#if TASK_AI_VOICE_ENABLE
+    tid_ai_voice = rt_thread_create("ai_voice",
+                                    ai_voice_task, RT_NULL,
+                                    TASK_AI_VOICE_STACK_SIZE,
+                                    TASK_AI_VOICE_PRIORITY,
+                                    20);
+    if (tid_ai_voice != RT_NULL) {
+        rt_thread_startup(tid_ai_voice);
+    } else {
+        LOG_E("Failed to create AI voice task");
+    }
+#endif
+
+    /* 充电检测任务 */
+#if TASK_CHARGER_ENABLE
+    tid_charger = rt_thread_create("charger",
+                                   charger_task, RT_NULL,
+                                   TASK_CHARGER_STACK_SIZE,
+                                   TASK_CHARGER_PRIORITY,
+                                   20);
+    if (tid_charger != RT_NULL) {
+        rt_thread_startup(tid_charger);
+    } else {
+        LOG_E("Failed to create charger task");
+    }
+#endif
+
+    /* 传感器读取任务 */
+#if TASK_SENSOR_ENABLE
+    tid_sensor = rt_thread_create("sensor",
+                                  sensor_task, RT_NULL,
+                                  TASK_SENSOR_STACK_SIZE,
+                                  TASK_SENSOR_PRIORITY,
+                                  20);
+    if (tid_sensor != RT_NULL) {
+        rt_thread_startup(tid_sensor);
+    } else {
+        LOG_E("Failed to create sensor task");
+    }
+#endif
+}
+
+/*============================================================================*/
+/* 任务实现 */
+/*============================================================================*/
+
+/**
+ * @brief 监视任务
+ */
+static void monitor_task(void *parameter)
+{
+    rt_tick_t last_tick = rt_tick_get();
+    rt_tick_t period = RT_TICK_PER_SECOND * TASK_MONITOR_PERIOD_MS / 1000;
+
+    LOG_I("Monitor task started");
+
+    while (1) {
+        /* 检查系统状态 */
+        switch (g_app_state) {
+            case APP_STATE_INIT:
+                LOG_D("System state: INIT");
+                break;
+
+            case APP_STATE_POWER_ON:
+                LOG_D("System state: POWER_ON");
+                g_app_state = APP_STATE_READY;
+                break;
+
+            case APP_STATE_READY:
+                LOG_D("System state: READY");
+                break;
+
+            case APP_STATE_WORKING:
+                LOG_D("System state: WORKING");
+                break;
+
+            case APP_STATE_CHARGING:
+                LOG_D("System state: CHARGING");
+                break;
+
+            case APP_STATE_ERROR:
+                LOG_E("System state: ERROR");
+                break;
+
+            case APP_STATE_FACTORY:
+                LOG_W("System state: FACTORY");
+                break;
+
+            default:
+                LOG_E("Unknown system state: %d", g_app_state);
+                break;
+        }
+
+        /* 检查任务状态 */
+        LOG_D("Task state: %d", g_task_state);
+
+        /* 等待周期 */
+        rt_thread_msdelay(TASK_MONITOR_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief OLED显示任务
+ */
+static void oled_task(void *parameter)
+{
+    LOG_I("OLED task started");
+
+    while (1) {
+        /* TODO: 实现OLED显示逻辑 */
+        rt_thread_msdelay(TASK_OLED_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief LED指示灯任务
+ */
+static void led_task(void *parameter)
+{
+    LOG_I("LED task started");
+
+    while (1) {
+        /* TODO: 实现LED指示灯逻辑 */
+        rt_thread_msdelay(TASK_LED_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief Packet通讯任务
+ */
+static void packet_task(void *parameter)
+{
+    LOG_I("Packet task started");
+
+    while (1) {
+        /* TODO: 实现Packet协议处理逻辑 */
+        rt_thread_msdelay(TASK_PACKET_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief 蓝牙任务
+ */
+static void ble_task(void *parameter)
+{
+    LOG_I("BLE task started");
+
+    while (1) {
+        /* TODO: 实现蓝牙协议处理逻辑 */
+        rt_thread_msdelay(TASK_BLE_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief CAN通讯任务
+ */
+static void can_task(void *parameter)
+{
+    LOG_I("CAN task started");
+
+    while (1) {
+        /* TODO: 实现CAN通讯协议处理逻辑 */
+        rt_thread_msdelay(TASK_CAN_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief 电机控制任务
+ */
+static void motor_task(void *parameter)
+{
+    LOG_I("Motor task started");
+
+    while (1) {
+        /* TODO: 实现电机控制逻辑 */
+        rt_thread_msdelay(TASK_MOTOR_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief AI语音任务
+ */
+static void ai_voice_task(void *parameter)
+{
+    LOG_I("AI voice task started");
+
+    while (1) {
+        /* TODO: 实现AI语音交互逻辑 */
+        rt_thread_msdelay(TASK_AI_VOICE_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief 充电检测任务
+ */
+static void charger_task(void *parameter)
+{
+    LOG_I("Charger task started");
+
+    while (1) {
+        /* TODO: 实现充电检测逻辑 */
+        rt_thread_msdelay(TASK_CHARGER_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief 传感器读取任务
+ */
+static void sensor_task(void *parameter)
+{
+    LOG_I("Sensor task started");
+
+    while (1) {
+        /* TODO: 实现传感器读取逻辑 */
+        rt_thread_msdelay(TASK_SENSOR_PERIOD_MS);
+    }
+}
+
+/*============================================================================*/
+/* 主函数 */
+/*============================================================================*/
 
 int main(void)
 {
-    static uint32_t state = 0;
-    uint32_t count = 1;
-    
-    /* fal 文件系统初始化 */
-    fal_init();
-    
-    /* 开机顺序：先基础外设，再高级功能 */
-    buzz_poweron();
-    led_init();
-    led_poweron_sequence();
-    
-    rt_thread_mdelay(100);
-    oled_handle_init();
-    oled_switch_page(PAGE_HOME);
-    
-    /* ========== 语音模块初始化 ========== */
-#ifdef PERIPHERALS_WONDER_ECHO_H__
-    if (wonder_echo_init(MODE_FREE_TRIGGER, 70) == 0)
-    {
-        LOG_I("WonderEcho AI initialized!");
-        
-        /* 注册回调函数 */
-        wonder_echo_register_on_wakeup([]() {
-            rt_kprintf("[Echo] Wakeup detected!\n");
-            buzz_keypress();
-            oled_switch_page(PAGE_HOME);
-        });
-        
-        wonder_echo_register_on_recognized([](const char* result) {
-            rt_kprintf("[Echo] Recognition: %s\n", result);
-            buzz_info();
-        });
-        
-        wonder_echo_register_on_tts_done([]() {
-            rt_kprintf("[Echo] TTS completed\n");
-        });
-        
-        /* 欢迎词播报 */
-        wonder_echo_speak_now("Welcome to iBed-body, system ready.", 80);
-    }
-    else
-    {
-        LOG_W("WonderEcho initialization failed!");
-    }
-#endif
-    
-    /* ========== RS485 超声波传感器 ========== */
-#ifdef PERIPHERALS_RS485_ULTRASONIC_H__
-    if (rs485_us_init() == 0)
-    {
-        LOG_I("RS485 Ultrasonic initialized!");
-        
-        uint16_t online = rs485_us_get_online_status();
-        if (online != 0)
-        {
-            rt_kprintf("[RS485] Found %d online sensors\n", __builtin_popcount(online));
-            oled_switch_page(PAGE_ULTRASONIC);
-            oled_set_auto_refresh(PAGE_ULTRASONIC, 200);
-        }
-        else
-        {
-            LOG_W("No RS485 sensors detected!");
-        }
-    }
-#endif
-    
-    /* ========== IMU 姿态传感器 ========== */
-#ifdef PERIPHERALS_QMI8658_H__
-    if (qmi8658_init() == 0)
-    {
-        LOG_I("QMI8658C IMU initialized!");
-        qmi8658_start_continuous(1000);
-        
-        oled_switch_page(PAGE_IMU_DATA);
-        oled_set_auto_refresh(PAGE_IMU_DATA, 100);
-    }
-#endif
-    
-    /* ========== CANopen 电机驱动 ========== */
-#ifdef PERIPHERALS_CANOPEN_MOTOR_H__
-    rt_uint8_t motor_nodes[] = {MOTOR_LEFT_NODE_ID, MOTOR_RIGHT_NODE_ID};
-    
-    if (canopen_motor_init(motor_nodes, 2) == 0)
-    {
-        LOG_I("CANopen Motor system initialized!");
-        
-        /* 使能双电机 */
-        canopen_motor_enable(0);  /* 左轮 */
-        canopen_motor_enable(1);  /* 右轮 */
-        
-        rt_kprintf("[CAN] Both motors enabled (node %d, %d)\n", 
-                   MOTOR_LEFT_NODE_ID, MOTOR_RIGHT_NODE_ID);
-    }
-    else
-    {
-        LOG_W("CANopen motor init failed! Check wiring.");
-    }
-#endif
-    
-    rt_kprintf("/****************************************************/\n");
-    LOG_I("The current version of APP firmware is iBed-body-V%s\n", APP_VERSION);
-    LOG_I("LED driver initialized with %d LEDs\n", LED_TOTAL_COUNT);
-    LOG_I("OLED display system initialized with %d pages\n", PAGE_COUNT);
-#ifdef PERIPHERALS_WONDER_ECHO_H__
-    LOG_I("WonderEcho AI voice module ready");
-#else
-    LOG_W("Voice module not compiled in");
-#endif
-#ifdef PERIPHERALS_RS485_ULTRASONIC_H__
-    LOG_I("RS485 Ultrasonic: Modbus RTU ready");
-#else
-    LOG_W("Ultrasonic module not compiled in");
-#endif
-#ifdef PERIPHERALS_QMI8658_H__
-    LOG_I("QMI8658C IMU: 6-axis (acc+gyro) ready");
-#else
-    LOG_W("IMU module not compiled in");
-#endif
-#ifdef PERIPHERALS_CANOPEN_MOTOR_H__
-    LOG_I("ZLAC8015D CANopen motors ready");
-#else
-    LOG_W("Motor driver not compiled in");
-#endif
-    rt_kprintf("/****************************************************/\n");
- 
-    while (count++)
-    {
-        switch(state)
-        {
-            case 0:
-                rt_thread_mdelay(1000);
-                
-                if (count % 9 == 0)
-                {
-                    buzz_task_start();
-                    for(int i = 0; i < 3; i++) {
-                        led_set_color(LED_IDX_WORKING_GREEN, LED_COLOR_FLASH_FAST);
-                        rt_thread_mdelay(100);
-                        led_set_color(LED_IDX_WORKING_GREEN, LED_COLOR_OFF);
-                        rt_thread_mdelay(100);
-                    }
-                    oled_trigger_refresh();
-                    LOG_I("Task started...");
-                }
-                else if (count % 12 == 0)
-                {
-                    buzz_task_done();
-                    led_set_working(RT_TRUE);
-                    LOG_I("Task completed!");
-                }
-                else if (count % 6 == 0)
-                {
-                    buzz_info();
-                    led_set_color(LED_IDX_CUSTOM_7, LED_COLOR_FLASH_SLOW);
-                }
-                else if (count % 8 == 0)
-                {
-                    buzz_keypress();
-                    led_scan_effect();
-                }
-                else if (count % 18 == 0)
-                {
-                    buzz_low_battery();
-                    led_set_battery_low(RT_TRUE);
-                    oled_switch_page(PAGE_BATTERY_INFO);
-                    LOG_I("Low battery warning!");
-                }
-                else if (count % 24 == 0)
-                {
-                    buzz_general_error();
-                    led_set_fault(RT_TRUE);
-                    oled_switch_page(PAGE_FAULT_LOG);
-                    LOG_W("General error occurred!");
-                }
-                
-                /* PID 控制循环示例（如果启用了电机驱动）*/
-#ifdef PERIPHERALS_CANOPEN_MOTOR_H__
-                canopen_motor_pid_update(0);
-                canopen_motor_pid_update(1);
-#endif
-                
-                break;
-                
-            default:
-                rt_thread_mdelay(100);
-                break;
-        }
-        
-        state++;
-        if (state > 30) state = 0;
-    }
+    /* 系统初始化 */
+    system_init();
 
-    return RT_EOK;
+    /* 创建队列 */
+    create_queues();
+
+    /* 创建信号量 */
+    create_semaphores();
+
+    /* 创建任务 */
+    create_tasks();
+
+    LOG_I("========================================");
+    LOG_I("System Ready!");
+    LOG_I("========================================");
+
+    /* 主循环 */
+    while (1) {
+        /* 系统运行 */
+        rt_thread_mdelay(100);
+    }
 }
 
-static int ota_app_vtor_reconfig(void)
+/*============================================================================*/
+/* MSH命令实现 */
+/*============================================================================*/
+
+#ifdef MSH_ENABLE
+
+/* 打印系统状态 */
+static int cmd_system_status(int argc, char **argv)
 {
-    #define NVIC_VTOR_MASK   0x3FFFFF80
-    SCB->VTOR = RT_APP_PART_ADDR & NVIC_VTOR_MASK;
+    rt_kprintf("========================================\n");
+    rt_kprintf("System Status\n");
+    rt_kprintf("========================================\n");
+    rt_kprintf("State: %d\n", g_app_state);
+    rt_kprintf("Component State: %d\n", g_component_state);
+    rt_kprintf("Comm State: %d\n", g_comm_state);
+    rt_kprintf("Task State: %d\n", g_task_state);
+    rt_kprintf("Version: %s\n", g_app_version_string);
+    rt_kprintf("========================================\n");
+
     return 0;
 }
-INIT_BOARD_EXPORT(ota_app_vtor_reconfig);
+MSH_CMD_EXPORT(cmd_system_status, System status);
+
+/* 打印任务状态 */
+static int cmd_task_status(int argc, char **argv)
+{
+    rt_kprintf("========================================\n");
+    rt_kprintf("Task Status\n");
+    rt_kprintf("========================================\n");
+
+#if TASK_MONITOR_ENABLE
+    rt_kprintf("Monitor: %s\n", tid_monitor ? "Running" : "Stopped");
+#endif
+
+#if TASK_OLED_ENABLE
+    rt_kprintf("OLED: %s\n", tid_oled ? "Running" : "Stopped");
+#endif
+
+#if TASK_LED_ENABLE
+    rt_kprintf("LED: %s\n", tid_led ? "Running" : "Stopped");
+#endif
+
+#if TASK_PACKET_ENABLE
+    rt_kprintf("Packet: %s\n", tid_packet ? "Running" : "Stopped");
+#endif
+
+#if TASK_BLE_ENABLE
+    rt_kprintf("BLE: %s\n", tid_ble ? "Running" : "Stopped");
+#endif
+
+#if TASK_CAN_ENABLE
+    rt_kprintf("CAN: %s\n", tid_can ? "Running" : "Stopped");
+#endif
+
+#if TASK_MOTOR_ENABLE
+    rt_kprintf("Motor: %s\n", tid_motor ? "Running" : "Stopped");
+#endif
+
+#if TASK_AI_VOICE_ENABLE
+    rt_kprintf("AI Voice: %s\n", tid_ai_voice ? "Running" : "Stopped");
+#endif
+
+#if TASK_CHARGER_ENABLE
+    rt_kprintf("Charger: %s\n", tid_charger ? "Running" : "Stopped");
+#endif
+
+#if TASK_SENSOR_ENABLE
+    rt_kprintf("Sensor: %s\n", tid_sensor ? "Running" : "Stopped");
+#endif
+
+    rt_kprintf("========================================\n");
+
+    return 0;
+}
+MSH_CMD_EXPORT(cmd_task_status, Task status);
+
+/* 重启系统 */
+static int cmd_reboot(int argc, char **argv)
+{
+    rt_kprintf("Rebooting system...\n");
+    rt_system_reboot();
+
+    return 0;
+}
+MSH_CMD_EXPORT(cmd_reboot, Reboot system);
+
+#endif /* MSH_ENABLE */

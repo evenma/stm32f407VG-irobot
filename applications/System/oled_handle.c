@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include "qmi8658.h"
 #include <math.h>
+#include "print_utils.h"
+#include "monitor.h"
 /**
  * ========== Global Variables ==========
  */
@@ -93,44 +95,6 @@ static void oled_key_task(void *parameter);
 /**
  * ========== Public Functions ==========
  */
-/**
- * @brief 将浮点数格式化为字符串（不打印）
- * @param value 要格式化的浮点数
- * @param buf 输出缓冲区
- * @param width 总宽度（右对齐，若实际宽度不足则用空格填充，设为0表示无宽度控制）
- * @param precision 小数位数（0-6）
- * @param sign 是否显示正号（1: 显示+号，0: 负数自动显示-号，正数不显示+）
- */
-static void format_float(float value, char *buf, int width, int precision, int sign)
-{
-    int integer_part, decimal_part;
-    int negative = (value < 0);
-    if (negative) value = -value;
-
-    integer_part = (int)value;
-    decimal_part = (int)((value - integer_part) * powf(10, precision) + 0.5f);
-    if (decimal_part >= (int)powf(10, precision)) {
-        decimal_part -= (int)powf(10, precision);
-        integer_part++;
-    }
-
-    // 格式化字符串
-    int len = rt_snprintf(buf, 32, "%s%d.%0*d",
-                          (negative ? "-" : (sign ? "+" : "")),
-                          integer_part,
-                          precision,
-                          decimal_part);
-    // 如果需要右对齐且宽度 > len，则前移指针
-    if (width > len && width > 0) {
-        int pad = width - len;
-        for (int i = len; i >= 0; i--) {
-            buf[i + pad] = buf[i];
-        }
-        for (int i = 0; i < pad; i++) {
-            buf[i] = ' ';
-        }
-    }
-}
 /**
  * @brief OLED hardware initialization
  */
@@ -631,8 +595,11 @@ static void render_home_page(u8g2_t* u8g2)
     u8g2_DrawStr(u8g2, 8, y, bat_str);
     y += 8;
 
-    // 进度条（电池电量示意）
-    draw_progress_bar(8, y, 112, 6, (bat_v > 22) ? 80 : 50);
+	//进度条 计算电量百分比 (Vmin=19.2V, Vmax=25.2V)
+		uint8_t bat_percent = (g_oled_battery_mv - BATTERY_LOW_VOLTAGE_MV) * 100 / 
+													(BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV);
+		if (bat_percent > 100) bat_percent = 100;
+		draw_progress_bar(8, y, 112, 6, bat_percent);
     y += 15;
 
     u8g2_DrawStr(u8g2, 8, y, "Power: Adapter");
@@ -705,24 +672,38 @@ static void render_ir_sensor_page(u8g2_t* u8g2)
 
 static void render_battery_info_page(u8g2_t* u8g2)
 {
-    // Detailed battery info
     oled_draw_title_bar("Battery Info", RT_TRUE);
-    
     u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
     uint8_t y = 30;
-    long bat_v = g_oled_battery_mv / 1000;
-    long bat_mv = g_oled_battery_mv % 1000;
-    char bat_str[20];
-    rt_snprintf(bat_str, sizeof(bat_str), "Voltage: %ld.%03dV", bat_v, bat_mv);
-    u8g2_DrawStr(u8g2, 8, y, bat_str);
+
+    // 电池电压
+    char buf[32];
+    rt_snprintf(buf, sizeof(buf), "Voltage: %d.%03dV", 
+                g_oled_battery_mv / 1000, g_oled_battery_mv % 1000);
+    u8g2_DrawStr(u8g2, 8, y, buf);
     y += 12;
-    u8g2_DrawStr(u8g2, 8, y, "Level: ~80%");
-    y += 2;
-    draw_progress_bar(8, y, 112, 6, 80);
+
+    // 电量百分比
+    uint8_t percent = (g_oled_battery_mv - BATTERY_LOW_VOLTAGE_MV) * 100 /
+                      (BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV);
+    if (percent > 100) percent = 100;
+    rt_snprintf(buf, sizeof(buf), "Level: %d%%", percent);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+//    y += 12;  
+    draw_progress_bar(8, y, 112, 6, percent);
     y += 12;
-    u8g2_DrawStr(u8g2, 8, y, "Charge: Idle");
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Adapter: No");
+
+    // 充电状态（使用 monitor 的充电检测电压）
+    rt_uint32_t charger_mv = monitor_get_charger_voltage();   // 需要包含 monitor.h
+    if (charger_mv > 5000) {
+        u8g2_DrawStr(u8g2, 8, y, "Charge: Active");
+    } else {
+        u8g2_DrawStr(u8g2, 8, y, "Charge: Idle");
+    }
+    y += 12;
+
+    // 其他信息
+    u8g2_DrawStr(u8g2, 8, y, "Status: Normal");
 }
 
 static void render_water_level_page(u8g2_t* u8g2)
@@ -981,7 +962,7 @@ MSH_CMD_EXPORT_ALIAS(oled_refresh_cmd, oled_refresh, OLED Force Screen Refresh);
 void oled_status(int argc, char *argv[])
 {
     OledPageId_t page = oled_get_current_page();
-    
+    g_oled_battery_mv = monitor_get_battery_voltage(); 
     rt_kprintf("[OLED] OLED Status Information\r\n");
     rt_kprintf("[OLED] =========================\r\n");
     rt_kprintf("[OLED] Current page: ");

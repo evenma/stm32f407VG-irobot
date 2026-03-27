@@ -34,7 +34,9 @@
 #include "global_conf.h"
 #include <math.h>
 #include "MahonyAhrs.h"
-
+#include "buzzer.h"
+#include <string.h>
+#include "print_utils.h"
 /**
  * @brief Internal QMI8658 object instance
  */
@@ -92,41 +94,6 @@ static const uint16_t gyr_odr_hz[] = {
 
 QmiDataDecoded_t s_latest_data = {0};
 static float gyro_bias[3] = {0};  // 在文件顶部定义
-/**
- * @brief 将浮点数格式化为字符串并打印
- * @param value 要打印的浮点数
- * @param width 总宽度（包含符号、整数、小数点和精度），若实际宽度不足则用空格填充（右对齐）
- * @param precision 小数位数（0-6）
- * @param sign 是否显示正号（1: 显示+号，0: 负数自动显示-号，正数不显示+）
- */
-static void print_float(float value, int width, int precision, int sign)
-{
-    char buf[32];
-    int integer_part, decimal_part;
-    int negative = (value < 0);
-    if (negative) value = -value;
-
-    integer_part = (int)value;
-    // 处理小数部分，防止浮点误差
-    decimal_part = (int)((value - integer_part) * powf(10, precision) + 0.5f);
-    if (decimal_part >= (int)powf(10, precision)) {
-        decimal_part -= (int)powf(10, precision);
-        integer_part++;
-    }
-
-    // 格式化为字符串
-    int len = rt_snprintf(buf, sizeof(buf), "%s%d.%0*d",
-                          (negative ? "-" : (sign ? "+" : "")),
-                          integer_part,
-                          precision,
-                          decimal_part);
-    // 右对齐输出（宽度控制）
-    if (width > len) {
-        for (int i = 0; i < width - len; i++)
-            rt_kprintf(" ");
-    }
-    rt_kprintf("%s", buf);
-}
 
 /* ========== AHRS Algorithm: Mahony Quaternion Filter ========== */
 
@@ -292,7 +259,6 @@ static rt_err_t imu_i2c_read_regs(uint8_t reg, uint8_t* buffer, uint8_t length)
     return RT_EOK;
 }
 
-
 static int16_t imu_i2c_read_word(uint8_t reg)
 {
     uint8_t buffer[2];
@@ -305,6 +271,55 @@ static int16_t imu_i2c_read_word(uint8_t reg)
     return (int16_t)((buffer[1] << 8) | buffer[0]);
 }
 
+//发送数据
+void IIC_send_byte(uint8_t txd)
+{
+    uint8_t i = 0;
+    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
+		rt_pin_write(IMU_SCL_PIN, PIN_LOW); //拉低时钟开始数据传输
+    for(i = 0; i < 8; i++) {
+				rt_pin_write(IMU_SDA_PIN, ((txd & 0x80) >> 7));
+				txd <<= 1;
+        rt_thread_delay(1);
+        rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
+        rt_thread_delay(1); //发送数据
+        rt_pin_write(IMU_SCL_PIN, PIN_LOW);
+        rt_thread_delay(1);
+    }
+}
+//终止信号
+void IIC_stop()		
+{
+    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
+    rt_pin_write(IMU_SCL_PIN, PIN_LOW);
+    rt_pin_write(IMU_SDA_PIN, PIN_LOW); //STOP:when CLK is high DATA change form low to high
+    rt_thread_delay(1);
+    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
+    rt_pin_write(IMU_SDA_PIN, PIN_HIGH); //发送I2C总线结束信号
+    rt_thread_delay(1);
+}
+//等待从机应答信号
+//返回值：1 接收应答失败
+//		  0 接收应答成功
+uint8_t IIC_wait_ack()
+{
+    uint8_t tempTime = 0;
+    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_INPUT);
+    rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
+    rt_thread_delay(1);
+    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
+    rt_thread_delay(1);
+
+    while(rt_pin_read(IMU_SDA_PIN)) {
+        tempTime++;
+        if(tempTime > 250) {
+            IIC_stop();
+            return 1;
+        }
+    }
+    rt_pin_write(IMU_SCL_PIN, PIN_LOW);
+    return 0;
+}
 /**
  * @brief 恢复 I2C 总线（当从机可能锁死时）
  * @param scl_pin SCL 引脚编号
@@ -312,30 +327,36 @@ static int16_t imu_i2c_read_word(uint8_t reg)
  */
 static void imu_recover_i2c_bus(void)
 {
-    // 1. 将 SCL 和 SDA 配置为 GPIO 输出模式
+   rt_device_t dev = rt_device_find("hwi2c1");
+    if (dev) rt_device_close(dev);          // 关闭 I2C 设备，释放外设
+
+    // 切换为 GPIO 输出模式
     rt_pin_mode(IMU_SCL_PIN, PIN_MODE_OUTPUT);
     rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
-    		
-		    // 方法2：发送停止条件
-    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-    rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
-    rt_thread_mdelay(1);
-    
-    // 方法3：发送多个停止条件
-    for(int i = 0; i < 3; i++)
-    {
-        // 发送停止条件
+
+    // 1. 产生 9 个时钟脉冲
+    for (int i = 0; i < 9; i++) {
+        rt_pin_write(IMU_SCL_PIN, PIN_LOW);
+        rt_hw_us_delay(5);
         rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-        rt_thread_mdelay(1);
-        rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
-        rt_thread_mdelay(1);
-    }    
-    
-    // 4. 恢复 I2C 引脚为复用功能（由驱动接管）
+        rt_hw_us_delay(5);
+    }
+
+    // 2. 发送 STOP 信号（参考 IIC_stop）
+    rt_pin_write(IMU_SDA_PIN, PIN_LOW);
+    rt_hw_us_delay(5);
+    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
+    rt_hw_us_delay(5);
+    rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
+    rt_hw_us_delay(5);
+
+    // 可选：将引脚恢复为输入模式（等待重新初始化）
     rt_pin_mode(IMU_SCL_PIN, PIN_MODE_INPUT);
     rt_pin_mode(IMU_SDA_PIN, PIN_MODE_INPUT);
-    // 注意：这里需要恢复为 I2C 的复用功能，实际取决于驱动实现。通常 I2C 驱动会在初始化时重新配置引脚。
-    // 为了简单，可以调用 I2C 驱动的重新初始化函数（如果有）。
+
+    // 重新打开 I2C 设备（驱动会重新配置引脚和外设）
+    if (dev) rt_device_open(dev, RT_DEVICE_FLAG_RDWR);
+
 }
 
 
@@ -397,12 +418,36 @@ rt_err_t qmi8658_validate_connection(int max_attempts)
         
         rt_kprintf("[QMI8658] Retry %d/%d: WHOAMI=0x%02X (expected 0x%02X)\n", 
                    attempt + 1, max_attempts, whoami, QMI8658_WHOAMI);
-				
-
-				// 普通重试：简单延时
-				rt_thread_mdelay(10);
-
-				
+				if (attempt == max_attempts - 1) // 最后一次尝试前
+				{
+						rt_kprintf("[QMI8658] Trying to recover I2C bus and soft reset...\n");
+						for(int i= 0;i<5;i++){
+							if(imu_i2c_write_reg(QMI8658_REG_RESET, 0xB0) != RT_EOK){
+									rt_kprintf("Try %d\n",i+1);
+									imu_recover_i2c_bus();
+								  rt_thread_mdelay(100);		
+									// 最后再读取一次 WHOAMI
+									imu_i2c_read_reg(QMI8658_REG_WHOAMI, &whoami);
+									if(whoami == QMI8658_WHOAMI) {
+											rt_kprintf("[QMI8658] Recovery succeeded: WHOAMI=0x%02X\n", whoami);
+											return RT_EOK;
+									}								
+							}else{
+								rt_thread_mdelay(100);
+								imu_i2c_read_reg(QMI8658_REG_WHOAMI, &whoami);        
+								if(whoami == QMI8658_WHOAMI)
+								{
+										rt_kprintf("[QMI8658] Connection validated: WHOAMI=0x%02X (attempt %d/%d)\n", 
+															whoami, attempt + 1, max_attempts);
+										return RT_EOK;
+								}
+							}									
+						}
+						rt_thread_mdelay(50);		
+				}else{
+					// 普通重试：简单延时
+					rt_thread_mdelay(10);
+				}
         attempt++;
     }
     
@@ -729,7 +774,6 @@ static void imu_read_sensor_data(float acc[3], float gyro[3])
 
 static rt_err_t imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
 {
-    rt_err_t err;   
     /* Check STATUS register */
     /* Data Ready Flag check first */
     uint8_t data_ready;
@@ -961,9 +1005,7 @@ rt_uint32_t qmi8658_create_imu_thread(void)
 int qmi8658_init(void)
 {
     rt_err_t err;
-    uint8_t whoami;
     uint8_t rev_id;
-// 		imu_recover_i2c_bus();          // 先恢复总线
 		rt_thread_mdelay(500);		   
     rt_kprintf("\n========== QMI8658 v7.0 Init (Official Registers) ========== \n");
 		s_i2c_dev = (struct rt_i2c_bus_device*)rt_device_find(QMI8658_I2C_BUS);
@@ -972,16 +1014,13 @@ int qmi8658_init(void)
 				return -RT_ERROR;
 		} else {
 				rt_kprintf("[QMI8658] I2C bus '%s' found.\n", QMI8658_I2C_BUS);
-		}
-		    rt_kprintf("[QMI8658] Performing I2C bus reset...\n");
-		
-
-		imu_i2c_write_reg(QMI8658_REG_RESET, 0xB0);
-    rt_thread_mdelay(50);
+		}		
         
     if(qmi8658_validate_connection(5) != RT_EOK)
     {
         rt_kprintf("[QMI8658] ERROR: Connection validation failed!\n");
+				BuzzerCommandTypeDef cmd = {100,100,8};
+				buzzer_start(&cmd);
         return -RT_ERROR;
     }
     // 灵敏度自调整 需要2-3S 上电启动开启自调整
@@ -1064,7 +1103,8 @@ int qmi8658_init(void)
     rt_kprintf("  - GYRO: ±128dps @ 224Hz via CTRL3(0x04)\n");
     rt_kprintf("  - INT2: Enabled on PB5\n");
     rt_kprintf("===========================================================\n\n");
-    
+		
+    buzzer_beep_once();
     return RT_EOK;
 }
 

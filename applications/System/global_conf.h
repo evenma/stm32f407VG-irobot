@@ -21,6 +21,22 @@
 #define APP_VERSION_PATCH         2
 #define APP_VERSION_STRING        "1.0.2"
 
+/* ========== ADC Device Name ========== */
+#define ADC_DEV_NAME                "adc1"
+enum adc1_channel {
+    ADC1_CH4  = 4,
+    ADC1_CH5  = 5,
+    ADC1_CH6  = 6,
+    ADC1_CH7  = 7,
+    ADC1_CH10 = 10,
+    ADC1_CH11 = 11,
+    ADC1_CH12 = 12,
+    ADC1_CH13 = 13,
+    ADC1_CH14 = 14,
+    ADC1_CH15 = 15,
+    ADC1_CH17 = 17,   // 内部参考电压（VREFINT）
+};
+
 
 /* ======================== 硬件平台选择 ======================== */
 
@@ -165,8 +181,8 @@
 
 #define BATTERY_FULL_VOLTAGE_MV   25200               // 25.2V 锂电池满电
 #define BATTERY_LOW_VOLTAGE_MV    19200               // 19.2V ≈20% 低电量阈值
-
-
+#define BATTERY_LOW_ALARM_MV      22000   // 22.0V 低电量报警阈值 为确保移动马桶有足够电量返回充电座，建议将低电量报警阈值设为 22.0V（约60%剩余容量）
+#define BATTERY_LOW_HYSTERESIS_MV   100   // 退出阈值比进入阈值高 100mV
 /* ======================== 充电口检测配置 ======================== */
 
 /**
@@ -176,9 +192,9 @@
  * PE4 = 充电 MOSFET 控制
  */
 #define CHARGER_DETECT_PIN        GET_PIN(A, 5)
-#define CHARGER_DETECT_ADC        ADC1_IN5
+#define CHARGER_DETECT_ADC        ADC1_CH5
 #define CHARGER_SAMPLE_PIN        GET_PIN(A, 4)
-#define CHARGER_SAMPLE_ADC        ADC1_IN4
+#define CHARGER_SAMPLE_ADC        ADC1_CH4
 #define CHARGER_CONTROL_PIN       GET_PIN(E, 4)
 
 
@@ -191,7 +207,7 @@
  */
 #define HEATER_CTRL_PIN           GET_PIN(E, 5)       // 加热管 MOSFET
 #define HEATER_DETECT_PIN         GET_PIN(A, 6)       // ADC1_IN6 - 检测供电接口连接
-#define HEATER_DETECT_ADC         ADC1_IN6
+#define HEATER_DETECT_ADC         ADC1_CH6
 
 /**
  * @brief 暖风烘干电热丝
@@ -263,9 +279,9 @@
  * PC4 = ADC1_IN14（后悬崖）
  */
 #define CLIFF_FRONT_PIN           GET_PIN(A, 7)
-#define CLIFF_FRONT_ADC           ADC1_IN7
+#define CLIFF_FRONT_ADC           ADC1_CH7
 #define CLIFF_REAR_PIN            GET_PIN(C, 4)
-#define CLIFF_REAR_ADC            ADC1_IN14
+#define CLIFF_REAR_ADC            ADC1_CH14
 
 
 /* ======================== 水温传感器配置 ======================== */
@@ -275,7 +291,7 @@
  * PC5 = ADC1_IN15（与后悬崖不同通道）
  */
 #define WATER_TEMP_PIN            GET_PIN(C, 5)
-#define WATER_TEMP_ADC            ADC1_IN15
+#define WATER_TEMP_ADC            ADC1_CH15
 
 
 /* ======================== 对射管充电对准配置 ======================== */
