@@ -14,6 +14,8 @@
 
 #include <rtthread.h>
 #include "global_conf.h"
+#include "Peripherals/irobot_can.h"
+#include "Peripherals/canopen_motor.h"
 
 #ifdef ULOG_ENABLE
 #include <ulog.h>
@@ -447,10 +449,38 @@ static void can_task(void *parameter)
  */
 static void motor_task(void *parameter)
 {
+    rt_bool_t driver_ready = RT_FALSE;
+
+    RT_UNUSED(parameter);
     LOG_I("Motor task started");
 
     while (1) {
-        /* TODO: 实现电机控制逻辑 */
+#if CAN_ENABLE
+        if (!driver_ready) {
+            if (!irobot_can_get_state()) {
+                (void)irobot_can_init();
+                rt_thread_msdelay(200);
+                continue;
+            }
+
+            (void)differential_drive_set_geometry(ZLAC_DEFAULT_WHEEL_TRACK_MM,
+                                                  ZLAC_DEFAULT_WHEEL_DIAMETER_MM);
+            (void)differential_drive_set_max_rpm(ZLAC_DEFAULT_MAX_RPM);
+            (void)differential_drive_stop();
+            (void)differential_drive_apply();
+            driver_ready = RT_TRUE;
+            LOG_I("Motor driver ready");
+        }
+
+        if (canopen_motor_service() != RT_EOK) {
+            driver_ready = RT_FALSE;
+            LOG_W("Motor service failed, try re-init");
+            rt_thread_msdelay(100);
+            continue;
+        }
+
+        (void)differential_drive_apply();
+#endif
         rt_thread_msdelay(TASK_MOTOR_PERIOD_MS);
     }
 }

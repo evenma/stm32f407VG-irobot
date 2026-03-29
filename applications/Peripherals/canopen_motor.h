@@ -1,207 +1,279 @@
+/*
+ * Copyright (c) 2026, iHomeRobot Project
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * @brief ZLAC8015D V4.0 CANopen dual-hub motor driver + differential drive helper
+ */
+
 #ifndef PERIPHERALS_CANOPEN_MOTOR_H__
 #define PERIPHERALS_CANOPEN_MOTOR_H__
 
 #include <rtthread.h>
+#include <rtdevice.h>
+#include <drivers/dev_can.h>
 
-
-/**
- * @brief CAN 总线配置 (STM32F407VG)
- * PA11 = CAN_RX, PA12 = CAN_TX (CAN1)
- */
-#ifndef MOTOR_CAN_BUS
-#define MOTOR_CAN_BUS         "can1"    // STM32F4 CAN1
+#ifdef __cplusplus
+extern "C" {
 #endif
 
+/* ======================== basic config ======================== */
 
-/**
- * @brief ZLAC8015D CANopen 参数
- * 参考《ZLAC8015D CANopen 通信例程 Version 1.00》
- * 
- * PDO 映射表:
- *   - RPDO1 (0x1A0): 状态字 0x6041, 实际位置 0x6064, 实际速度 0x606C
- *   - TPDO1 (0x181): 目标速度 0x60FF, 操作模式 0x6060
- *   
- * SDO 对象字典:
- *   0x6040  : 控制字 (Control Word)
- *   0x6041  : 状态字 (Status Word)
- *   0x6060  : 操作模式设定值
- *   0x6064  : 当前位置 (编码器计数)
- *   0x606C  : 实际速度 (RPM*100)
- *   0x60FF  : 目标速度
- *   0x2800  : NMT 心跳请求
- */
+#ifndef ZLAC_CAN_DEV_NAME
+#define ZLAC_CAN_DEV_NAME                      "can1"
+#endif
 
-/**
- * @brief 电机节点 ID (CANopen NMT 地址)
- */
-#define MOTOR_LEFT_NODE_ID    1        // 左轮电机 (节点 1)
-#define MOTOR_RIGHT_NODE_ID   2        // 右轮电机 (节点 2)
-#define MOTOR_MAX_NODES       2        // 最多支持 2 个电机
+#ifndef ZLAC_CAN_BAUD
+#define ZLAC_CAN_BAUD                          CAN500kBaud
+#endif
 
+#ifndef ZLAC_NODE_ID_DEFAULT
+#define ZLAC_NODE_ID_DEFAULT                   1
+#endif
 
-/**
- * @brief CANopen PDO 索引
- */
-#define OBJ_CONTROL_WORD    0x6040    // 控制字 (Control Word)
-#define OBJ_STATUS_WORD     0x6041    // 状态字 (Status Word) - 注意是 0x6041
-#define OBJ_OP_MODE         0x6060    // 操作模式设定值
-#define OBJ_TARGET_VELOCITY 0x60FF    // 目标速度
-#define OBJ_CURRENT_POSITION 0x6064   // 当前位置 (编码器脉冲数)
-#define OBJECT_VELOCITY     0x606C    // 实际速度 (RPM*100)
+#define ZLAC_SDO_TIMEOUT_MS                    200
+#define ZLAC_OFFLINE_TIMEOUT_MS                3000
+#define ZLAC_RX_THREAD_STACK_SIZE              2048
+#define ZLAC_RX_THREAD_PRIORITY                12
+#define ZLAC_RX_THREAD_TICK                    10
 
+#define ZLAC_DEFAULT_ACCEL_MS                  200
+#define ZLAC_DEFAULT_DECEL_MS                  200
+#define ZLAC_DEFAULT_SYNC_ENABLE               RT_FALSE
+#define ZLAC_DEFAULT_WHEEL_TRACK_MM            420
+#define ZLAC_DEFAULT_WHEEL_DIAMETER_MM         165
+#define ZLAC_DEFAULT_MAX_RPM                   300
 
-/**
- * @brief 工作模式 (Operation Mode)
- * 根据 ZLAC8015D 手册定义
- */
+#define ZLAC_SPEED_MIN_RPM                     (-1000)
+#define ZLAC_SPEED_MAX_RPM                     (1000)
+
+/* ======================== CiA301 / CiA402 ======================== */
+
+#define ZLAC_COB_NMT                           0x000
+#define ZLAC_COB_EMCY(node)                    (0x080 + (node))
+#define ZLAC_COB_TPDO0(node)                   (0x180 + (node))
+#define ZLAC_COB_RPDO0(node)                   (0x200 + (node))
+#define ZLAC_COB_TPDO1(node)                   (0x280 + (node))
+#define ZLAC_COB_RPDO1(node)                   (0x300 + (node))
+#define ZLAC_COB_TPDO2(node)                   (0x380 + (node))
+#define ZLAC_COB_RPDO2(node)                   (0x400 + (node))
+#define ZLAC_COB_TPDO3(node)                   (0x480 + (node))
+#define ZLAC_COB_RPDO3(node)                   (0x500 + (node))
+#define ZLAC_COB_SDO_TX(node)                  (0x580 + (node))
+#define ZLAC_COB_SDO_RX(node)                  (0x600 + (node))
+#define ZLAC_COB_HEARTBEAT(node)               (0x700 + (node))
+
+/* object dictionary */
+#define ZLAC_OBJ_HEARTBEAT_PRODUCER            0x1017
+#define ZLAC_OBJ_SAVE_PARAM                    0x2010
+#define ZLAC_OBJ_SYNC_ASYNC_FLAG               0x200F
+#define ZLAC_OBJ_TEMP_INFO                     0x2032
+#define ZLAC_OBJ_MOTOR_STATE                   0x2033
+#define ZLAC_OBJ_BUS_VOLTAGE                   0x2035
+#define ZLAC_OBJ_FAULT_CODE                    0x603F
+#define ZLAC_OBJ_CONTROL_WORD                  0x6040
+#define ZLAC_OBJ_STATUS_WORD                   0x6041
+#define ZLAC_OBJ_QUICK_STOP_CODE               0x605A
+#define ZLAC_OBJ_DISABLE_CODE                  0x605C
+#define ZLAC_OBJ_HALT_CODE                     0x605D
+#define ZLAC_OBJ_MODE_OF_OPERATION             0x6060
+#define ZLAC_OBJ_MODE_DISPLAY                  0x6061
+#define ZLAC_OBJ_ACTUAL_POSITION               0x6064
+#define ZLAC_OBJ_ACTUAL_VELOCITY               0x606C
+#define ZLAC_OBJ_TARGET_POSITION               0x607A
+#define ZLAC_OBJ_TARGET_TORQUE                 0x6071
+#define ZLAC_OBJ_MAX_SPEED                     0x6081
+#define ZLAC_OBJ_ACCEL_TIME                    0x6083
+#define ZLAC_OBJ_DECEL_TIME                    0x6084
+#define ZLAC_OBJ_QUICKSTOP_DECEL               0x6085
+#define ZLAC_OBJ_TORQUE_SLOPE                  0x6087
+#define ZLAC_OBJ_TARGET_VELOCITY               0x60FF
+
+/* PDO objects (optional) */
+#define ZLAC_OBJ_RPDO1_COMM                    0x1401
+#define ZLAC_OBJ_RPDO1_MAP                     0x1601
+#define ZLAC_OBJ_TPDO0_COMM                    0x1800
+#define ZLAC_OBJ_TPDO0_MAP                     0x1A00
+
+/* NMT */
+#define ZLAC_NMT_START                         0x01
+#define ZLAC_NMT_STOP                          0x02
+#define ZLAC_NMT_PREOP                         0x80
+#define ZLAC_NMT_RESET_NODE                    0x81
+#define ZLAC_NMT_RESET_COMM                    0x82
+
+/* control word */
+#define ZLAC_CTRL_DISABLE_VOLTAGE              0x0000
+#define ZLAC_CTRL_SHUTDOWN                     0x0006
+#define ZLAC_CTRL_SWITCH_ON                    0x0007
+#define ZLAC_CTRL_ENABLE_OPERATION             0x000F
+#define ZLAC_CTRL_QUICK_STOP                   0x0002
+#define ZLAC_CTRL_FAULT_RESET                  0x0080
+
+#define ZLAC_SAVE_PARAM_MAGIC                  0x0001
+
 typedef enum
 {
-    MODE_PROFILE_POSITION = 6,      // CSP Profile Position ⭐ 推荐
-    MODE_PROFILE_VELOCITY = 8,      // CSV Profile Velocity
-    MODE_PROFILE_TORQUE = 1,        // CST Profile Torque
-    MODE_INTERPOLATED_POSITION = 7, // 插补位置模式
-    MODE_CYCLIC_SYNCHRONOUS_POS = 5, // Sync cyclic 位置
-    MODE_CYCLIC_SYNCHRONOUS_VEL = 9, // Sync cyclic 速度
-    MODE_VELOCITY_LIMIT_MODE = 3,   // 速度限制模式
-    MODE_HOMING_MODE = 6            // 回原点 (需配合 CSP)
-} MotorOperationMode_t;
+    MOTOR_SIDE_LEFT = 0,
+    MOTOR_SIDE_RIGHT,
+    MOTOR_SIDE_BOTH,
+} MotorSide_t;
 
+typedef enum
+{
+    ZLAC_MODE_UNDEFINED = 0,
+    ZLAC_MODE_POSITION  = 1,
+    ZLAC_MODE_SPEED     = 3,
+    ZLAC_MODE_TORQUE    = 4,
+} ZlacMotorMode_t;
 
-/* ========== 数据结构 ========== */
+typedef enum
+{
+    ZLAC_NMT_STATE_BOOTUP       = 0x00,
+    ZLAC_NMT_STATE_STOPPED      = 0x04,
+    ZLAC_NMT_STATE_OPERATIONAL  = 0x05,
+    ZLAC_NMT_STATE_PREOP        = 0x7F,
+} ZlacNmtState_t;
 
-/**
- * @brief ZLAC8015D 状态字位定义 (0x6041)
- */
-typedef struct {
-    uint16_t not_ready_to_switch_on : 1;    // Bit 0
-    uint16_t switch_on_disabled : 1;        // Bit 1
-    uint16_t ready_to_switch_on : 1;        // Bit 2
-    uint16_t switched_on : 1;               // Bit 3
-    uint16_t operation_enabled : 1;         // Bit 4
-    uint16_t fault : 1;                     // Bit 5
-    uint16_t quick_stop_active : 1;         // Bit 6
-    uint16_t switching_on_pending : 1;      // Bit 7
-    uint16_t external_position_limit : 1;   // Bit 8
-    uint16_t internal_position_limit : 1;   // Bit 9
-    uint16_t position_within_tolerance : 1; // Bit 10
-    uint16_t target_reached : 1;            // Bit 11
-    uint16_t velocity_within_tolerance : 1; // Bit 12
-    uint16_t position_error_overflow : 1;   // Bit 13
-    uint16_t reserved1 : 1;                 // Bit 14
-    uint16_t reserved2 : 1;                 // Bit 15
-} StatusWordBits_t;
-
-
-/**
- * @brief 电机反馈数据
- */
 typedef struct
 {
-    uint16_t status_word;           // 状态字 (0x6041)
-    int32_t position_ticks;         // 当前位置 (编码器脉冲数)
-    float velocity_rpm;             // 实际速度 (RPM)
-    float torque_percent;           // 当前扭矩 (%)
-    StatusWordBits_t bits;          // 位解析结构
-    MotorStateBits_t state_enum;    // 状态枚举转换
-} MotorFeedback_t;
+    rt_int32_t position_counts;
+    rt_int16_t actual_speed_rpm_x10;
+    rt_uint16_t status_word;
 
+    rt_bool_t enabled;
+    rt_bool_t fault;
+    rt_bool_t quick_stopped;
+    rt_bool_t target_reached;
+} ZlacWheelFeedback_t;
 
-/**
- * @brief 电机控制命令 (TPDO1)
- */
 typedef struct
 {
-    uint16_t control_word;          // 控制字 (0x6040)
-    float target_velocity;          // 目标速度 (CSV 模式) 或增量位置
-    int32_t target_position;        // 目标位置 (CSP 模式绝对位置)
-    uint8_t operation_mode;         // 操作模式 (0x6060)
-} MotorCommand_t;
+    rt_bool_t initialized;
+    rt_bool_t online;
+    rt_bool_t heartbeat_seen;
+    rt_bool_t pdo_speed_feedback_enabled;
 
+    rt_uint8_t node_id;
+    rt_uint8_t nmt_state;
 
-/**
- * @brief ZLAC8015D 电机对象
- */
-typedef struct
-{
-    rt_uint8_t node_id;             // CANopen 节点 ID (1~127)
-    rt_bool_t initialized;          // 是否已初始化
-    
-    /* 配置参数 */
+    rt_tick_t last_rx_tick;
+    rt_tick_t last_heartbeat_tick;
+
+    rt_device_t can_dev;
+    rt_thread_t rx_thread;
+    rt_sem_t rx_sem;
+    struct rt_mutex lock;
+    struct rt_completion sdo_completion;
+
     struct
     {
-        MotorOperationMode_t op_mode;           // 当前操作模式
-        float encoder_ticks_per_rev;            // 每圈编码器计数 (默认 4096)
-        float gear_ratio;                       // 减速比
-        float max_velocity_rpm;                 // 最大速度 (RPM)
-        float acceleration_rpm_per_sec;         // 加速度 (RPM/s)
-        float deceleration_rpm_per_sec;         // 减速度 (RPM/s)
-        int32_t homing_offset;                  // 原点偏移
-        uint16_t quick_stop_decel;              // 快速停止减速度
-    } config;
-    
-    /* 当前状态 */
-    MotorFeedback_t feedback;           // 实时反馈数据
-    MotorCommand_t command;             // 待发送命令
-    
-    /* PID 控制器参数 */
-    float kp;                         // 比例增益
-    float ki;                         // 积分增益
-    float kd;                         // 微分增益
-    float target_value;               // PID 目标值
-    float last_error;                 // 上次误差
-    float integral_sum;               // 积分累加
-    float integral_limit;             // 积分限幅
-    
-    /* CAN 通信统计 */
-    uint32_t tx_count;                // 发送帧数
-    uint32_t rx_count;                // 接收帧数
-    uint32_t timeout_errors;          // 超时错误
-    uint32_t crc_errors;              // CRC 错误
-    
-    /* 回调函数 */
-    void (*on_state_changed)(uint8_t old_state, uint8_t new_state);
-    void (*on_fault)(uint16_t fault_code);
-    void (*on_home_complete)(void);
-} CanMotorObject_t;
+        rt_bool_t pending;
+        rt_err_t result;
+        rt_uint8_t cs;
+        rt_uint16_t index;
+        rt_uint8_t subindex;
+        rt_uint8_t data[4];
+        rt_uint8_t len;
+        rt_uint32_t abort_code;
+    } sdo_resp;
 
+    struct
+    {
+        ZlacMotorMode_t mode;
+        rt_int16_t target_left_rpm;
+        rt_int16_t target_right_rpm;
+        ZlacWheelFeedback_t left;
+        ZlacWheelFeedback_t right;
+        rt_uint32_t fault_code;
+        rt_int16_t motor_temp_left_x10;
+        rt_int16_t motor_temp_right_x10;
+        rt_int16_t driver_temp_x10;
+        rt_uint16_t bus_voltage_x100;
+    } feedback;
 
-/* ========== 公共 API ========== */
+    rt_uint32_t tx_count;
+    rt_uint32_t rx_count;
+    rt_uint32_t sdo_timeout_count;
+    rt_uint32_t sdo_abort_count;
+    rt_uint32_t parse_error_count;
+} CanopenMotorObject_t;
 
-int canopen_motor_init(rt_uint8_t* nodes, rt_uint8_t count);
+typedef struct
+{
+    rt_bool_t enabled;
+    rt_bool_t direct_rpm_mode;
+    rt_bool_t dirty;
+
+    rt_uint16_t wheel_track_mm;
+    rt_uint16_t wheel_diameter_mm;
+    rt_int16_t max_rpm;
+
+    rt_int32_t linear_mm_s;
+    rt_int32_t angular_mrad_s;
+
+    rt_int16_t target_left_rpm;
+    rt_int16_t target_right_rpm;
+} DifferentialDriveState_t;
+
+typedef void (*CanopenMotorRxHook_t)(const struct rt_can_msg *msg, void *user_data);
+
+/* ======================== motor API ======================== */
+
+int canopen_motor_init(rt_uint8_t node_id);
 void canopen_motor_deinit(void);
-CanMotorObject_t* canopen_motor_get_object(uint8_t idx);
+const CanopenMotorObject_t *canopen_motor_get_object(void);
+void canopen_motor_set_rx_hook(CanopenMotorRxHook_t hook, void *user_data);
 
-/* 基本控制 */
-int canopen_motor_enable(uint8_t motor_idx);
-int canopen_motor_disable(uint8_t motor_idx);
-int canopen_motor_reset_fault(uint8_t motor_idx);
-int canopen_motor_homing(uint8_t motor_idx);
+int canopen_motor_nmt_command(rt_uint8_t command);
+int canopen_motor_start_node(void);
+int canopen_motor_stop_node(void);
+int canopen_motor_enter_preop(void);
 
-/* 运动控制 */
-int canopen_motor_set_velocity(uint8_t motor_idx, float rpm);
-int canopen_motor_quick_stop(uint8_t motor_idx);
-int canopen_motor_set_position(uint8_t motor_idx, float positions);
-int canopen_motor_move_relative(uint8_t motor_idx, float angle_deg);
-rt_bool_t canopen_motor_is_reached(uint8_t motor_idx);
+int canopen_motor_set_mode(ZlacMotorMode_t mode);
+int canopen_motor_set_sync_mode(rt_bool_t sync_enable);
+int canopen_motor_set_accel_decel(rt_uint32_t accel_ms, rt_uint32_t decel_ms);
+int canopen_motor_set_quickstop_decel(rt_uint32_t decel_ms);
+int canopen_motor_enable(void);
+int canopen_motor_disable(void);
+int canopen_motor_quick_stop(void);
+int canopen_motor_clear_fault(void);
+int canopen_motor_stop(void);
+int canopen_motor_prepare_speed_mode(rt_bool_t sync_enable, rt_uint32_t accel_ms, rt_uint32_t decel_ms);
 
-/* 状态查询 */
-int canopen_motor_read_feedback(uint8_t motor_idx);
-MotorStateBits_t canopen_motor_get_state(uint8_t motor_idx);
-rt_bool_t canopen_motor_has_fault(uint8_t motor_idx);
-uint16_t canopen_motor_get_fault_code(uint8_t motor_idx);
+int canopen_motor_set_velocity(rt_int16_t left_rpm, rt_int16_t right_rpm);
+int canopen_motor_set_single_velocity(MotorSide_t side, rt_int16_t rpm);
 
-/* PID 闭环控制 */
-void canopen_motor_pid_update(uint8_t motor_idx);
-int canopen_motor_set_pid(uint8_t motor_idx, float kp, float ki, float kd, float limit);
-float canopen_motor_pid_get_output(uint8_t motor_idx);
+int canopen_motor_read_status(void);
+int canopen_motor_read_velocity(void);
+int canopen_motor_read_position(void);
+int canopen_motor_read_fault(void);
+int canopen_motor_read_temperature(void);
+int canopen_motor_read_bus_voltage(void);
+int canopen_motor_refresh_feedback(void);
+int canopen_motor_service(void);
 
+int canopen_motor_config_tpdo0_speed(rt_uint8_t transmission_type, rt_uint16_t event_time_ms);
+int canopen_motor_config_rpdo1_target_velocity(void);
+int canopen_motor_save_parameters(void);
 
-/* MSH 调试命令 */
-#ifdef RT_USING_MSH
-void msh_canopen_motor_status(int argc, char** argv);
-void msh_canopen_motor_velocity(int argc, char** argv);
-void msh_canopen_motor_pid(int argc, char** argv);
-void msh_canopen_motor_test(int argc, char** argv);
+rt_bool_t canopen_motor_is_online(void);
+
+/* ======================== differential drive API ======================== */
+
+int differential_drive_init(void);
+void differential_drive_reset(void);
+const DifferentialDriveState_t *differential_drive_get_state(void);
+int differential_drive_set_geometry(rt_uint16_t wheel_track_mm, rt_uint16_t wheel_diameter_mm);
+int differential_drive_set_max_rpm(rt_int16_t max_rpm);
+int differential_drive_set_twist(rt_int32_t linear_mm_s, rt_int32_t angular_mrad_s);
+int differential_drive_set_twist_deg(rt_int32_t linear_mm_s, rt_int32_t angular_deg_s);
+int differential_drive_set_wheel_rpm(rt_int16_t left_rpm, rt_int16_t right_rpm);
+int differential_drive_stop(void);
+int differential_drive_apply(void);
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* PERIPHERALS_CANOPEN_MOTOR_H__ */
