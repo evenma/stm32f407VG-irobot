@@ -43,6 +43,8 @@ typedef enum
     LED_COLOR_FLASH_SLOW,   // 慢速闪烁 (500ms)
 } LedColorState_t;
 
+#define LED_COLOR_GREEN_ON LED_COLOR_ON
+#define LED_COLOR_RED_ON LED_COLOR_ON
 
 /**
  * @brief LED 对象结构体

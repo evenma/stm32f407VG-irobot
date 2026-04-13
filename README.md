@@ -1,203 +1,124 @@
-# iHomeRobot 下位机固件开发日志
+# BSP README 模板
 
-## 版本历史
+## 简介
 
-### v1.0.11 (2026-03-14) ⭐ CURRENT
-**功能：集成 WonderEcho AI 语音模块 + CANopen 电机驱动**
+本文档为 xxx 开发板的 BSP (板级支持包) 说明。
 
-#### 新增硬件支持
-- **WonderEcho AI 语音模块** (`Peripherals/wonder_echo.c/h`)
-  - I2C 通信 (PB10-SCL, PB11-SDA)
-  - 唤醒词识别、TTS 播报
-  - 3 个回调：wake-up / recognition / TTS done
-  
-- **CANopen ZLAC8015D 电机驱动** (`Peripherals/canopen_motor.c/h`)
-  - CAN 总线 (PA11-RX, PA12-TX)
-  - 双差速电机控制 (左/右节点 ID 可配置)
-  - PDO 实时速度控制 + SDO 参数配置
-  - PID 自动调节
+主要内容如下：
 
-#### 主程序入口更新
-```c
-// applications/main.c
-#define APP_VERSION "1.0.11"
+- 开发板资源介绍
+- BSP 快速上手
+- 进阶使用方法
 
-int main(void)
-{
-    // 初始化顺序：
-    buzz_poweron();       // 蜂鸣器电源
-    led_init();           // LED (SPI+74HC595)
-    oled_handle_init();   // OLED 显示屏
-    
-    wonder_echo_init();   // AI 语音
-    rs485_us_init();      // RS485 超声波
-    qmi8658_init();       // IMU 姿态
-    canopen_motor_init(); // CANopen 电机
-}
-```
+通过阅读快速上手章节开发者可以快速地上手该 BSP，将 RT-Thread 运行在开发板上。在进阶使用指南章节，将会介绍更多高级功能，帮助开发者利用 RT-Thread 驱动更多板载资源。
 
----
+## 开发板介绍
 
-### v1.0.10 (2026-03-14)
-**功能：RS485 级联超声波传感器阵列**
+【此处简单介绍一下开发板】
 
-#### 新增硬件支持
-- **RS485 防水超声波** (`Peripherals/rs485_ultrasonic.c/h`)
-  - Modbus RTU 协议 (波特率 9600)
-  - 最多 7 个传感器级联 (地址 1-7)
-  - 检测范围：0.03m~5m
-  - 在线状态检测 + 故障标记
+开发板外观如下图所示：
 
-#### MSH 调试命令
+![board](figures/board.png)
+
+该开发板常用 **板载资源** 如下：
+
+- MCU：STM32xxx，主频 xxxMHz，xxxKB FLASH ，xxxKB RAM
+- 外部 RAM：型号，xMB
+- 外部 FLASH：型号，xMB
+- 常用外设
+  - LED：x个，DS0（红色，PB1），DS1（绿色，PB0）
+  - 按键：x个，K0（兼具唤醒功能，PA0），K1（PC13）
+- 常用接口：USB 转串口、SD 卡接口、以太网接口、LCD 接口等
+- 调试接口，标准 JTAG/SWD
+
+开发板更多详细信息请参考【厂商名】 [xxx开发板介绍](https://xxx)。
+
+## 外设支持
+
+本 BSP 目前对外设的支持情况如下：
+
+| **板载外设**      | **支持情况** | **备注**                              |
+| :----------------- | :----------: | :------------------------------------- |
+| USB 转串口        |     支持     |                                       |
+| SPI Flash         |     支持     |                                       |
+| 以太网            |     支持     |                                       |
+| SD卡              |   暂不支持   |                                       |
+| CAN               |   暂不支持   |                                       |
+| **片上外设**      | **支持情况** | **备注**                              |
+| GPIO              |     支持     | PA0, PA1... PK15 ---> PIN: 0, 1...176 |
+| UART              |     支持     | UART1/x/x                             |
+| SPI               |     支持     | SPI1/x/x                              |
+| I2C               |     支持     | 软件 I2C                              |
+| SDIO              |   暂不支持   | 即将支持                              |
+| RTC               |   暂不支持   | 即将支持                              |
+| PWM               |   暂不支持   | 即将支持                              |
+| USB Device        |   暂不支持   | 即将支持                              |
+| USB Host          |   暂不支持   | 即将支持                              |
+| IWG               |   暂不支持   | 即将支持                              |
+| xxx               |   暂不支持   | 即将支持                              |
+| **扩展模块**      | **支持情况** | **备注**                              |
+|     xxx 模块      |   支持   |                                      |
+
+## 使用说明
+
+使用说明分为如下两个章节：
+
+- 快速上手
+
+    本章节是为刚接触 RT-Thread 的新手准备的使用说明，遵循简单的步骤即可将 RT-Thread 操作系统运行在该开发板上，看到实验效果 。
+
+- 进阶使用
+
+    本章节是为需要在 RT-Thread 操作系统上使用更多开发板资源的开发者准备的。通过使用 ENV 工具对 BSP 进行配置，可以开启更多板载资源，实现更多高级功能。
+
+
+### 快速上手
+
+本 BSP 为开发者提供 MDK4、MDK5 和 IAR 工程，并且支持 GCC 开发环境。下面以 MDK5 开发环境为例，介绍如何将系统运行起来。
+
+#### 硬件连接
+
+使用数据线连接开发板到 PC，打开电源开关。
+
+#### 编译下载
+
+双击 project.uvprojx 文件，打开 MDK5 工程，编译并下载程序到开发板。
+
+> 工程默认配置使用 xxx 仿真器下载程序，在通过 xxx 连接开发板的基础上，点击下载按钮即可下载程序到开发板
+
+#### 运行结果
+
+下载程序成功之后，系统会自动运行，【这里写开发板运行起来之后的现象，如：LED 闪烁等】。
+
+连接开发板对应串口到 PC , 在终端工具里打开相应的串口（115200-8-1-N），复位设备后，可以看到 RT-Thread 的输出信息:
+
 ```bash
-us485 status     # 显示在线传感器数量
-us485 read <addr># 读取单个传感器距离
-us485 list       # 显示所有传感器数据
+ \ | /
+- RT -     Thread Operating System
+ / | \     3.1.1 build Nov 19 2018
+ 2006 - 2018 Copyright by rt-thread team
+msh >
 ```
+### 进阶使用
 
----
+此 BSP 默认只开启了 GPIO 和 串口1 的功能，如果需使用 SD 卡、Flash 等更多高级功能，需要利用 ENV 工具对BSP 进行配置，步骤如下：
 
-### v1.0.9 (2026-03-14)
-**功能：QMI8658C 6 轴 IMU 姿态传感器**
+1. 在 bsp 下打开 env 工具。
 
-#### 新增硬件支持
-- **QMI8658C IMU** (`Peripherals/qmi8658.c/h`)
-  - I2C 通信 (PB6-SCL, PB7-SDA, PB5-INT)
-  - ±16g 加速度计 + ±2000°/s 陀螺仪
-  - 1000Hz 连续采样
-  - Euler 角计算 (Pitch/Roll/Yaw)
+2. 输入`menuconfig`命令配置工程，配置好之后保存退出。
 
-#### OLED 页面扩展
-```
-PAGE_IMU_DATA = 8  // 新页面显示 Pitch/Roll 角度
-```
+3. 输入`pkgs --update`命令更新软件包。
 
-#### MSH 调试命令
-```bash
-qmi read         # 单次读取
-qmi stream       # 实时流式显示
-qmi start [hz]   # 启动连续采样 (默认 1000Hz)
-qmi stop         # 停止采样
-qmi status       # 显示传感器状态
-```
+4. 输入`scons --target=mdk4/mdk5/iar` 命令重新生成工程。
 
----
+本章节更多详细的介绍请参考 [STM32 系列 BSP 外设驱动使用教程](../docs/STM32系列BSP外设驱动使用教程.md)。
 
-### v1.0.8 (2026-03-14)
-**功能：OLED 多页面显示系统**
+## 注意事项
 
-#### 核心改动
-- **SSD1315/SSD1306 OLED** (128×64) 多页面管理
-- 动态刷新策略（不同页面不同刷新频率）
-- 按键翻页 (SW3=上一页，SW4=下一页)
+- xxx
 
-#### 页面布局 (共 11 页)
-| 页码 | 名称 | 说明 | 刷新率 |
-|------|------|------|--------|
-| 0 | PAGE_BOOT | 开机动画 | 一次性 |
-| 1 | PAGE_HOME | 主页仪表盘 | 1000ms |
-| 2 | PAGE_PID_TUNING | PID 参数调整 | 500ms |
-| 3 | PAGE_ULTRASONIC | 超声波距离 | 200ms |
-| 4 | PAGE_IR_SENSOR | 红外悬崖检测 | 1000ms |
-| 5 | PAGE_BATTERY_INFO | 电池电压/电量 | 2000ms |
-| 6 | PAGE_WATER_LEVEL | 水箱水位 | 1000ms |
-| 7 | PAGE_MOTOR_STATUS | 电机 RPM | 100ms |
-| 8 | PAGE_IMU_DATA | 姿态角度 | 100ms |
-| 9 | PAGE_FAULT_LOG | 故障日志 | 手动切换 |
-| 10 | PAGE_SETTINGS | 设置项 | 1000ms |
-| 11 | PAGE_COUNT | 总页数 | - |
+## 联系人信息
 
----
+维护人:
 
-### v1.0.7 (2026-03-14)
-**功能：LED 指示灯驱动 (SPI+74HC595)**
-
-#### 硬件架构
-- **8 个单色 LED** 通过 1 片 74HC595 移位寄存器驱动
-- SPI2 总线共享 (PB13-SCK, PB15-MOSI → 74HC595)
-- GPIO PB2 → 74HC595 RCLK(时钟锁存)
-
-#### LED 分配
-| ID | 颜色 | 用途 | 来源 |
-|----|------|------|------|
-| 0 | Green | 工作指示灯 | 本地 |
-| 1 | Red | 故障指示 | 本地 |
-| 2 | Green | 满电指示 | 本地 |
-| 3 | Red | 低电警告 | 本地 |
-| 4 | Green | 满水指示 | 本地 |
-| 5 | Red | 低水警告 | 本地 |
-| 6 | Green | 导航灯 | ←上位机 |
-| 7 | Red | 异常灯 | ←上位机 |
-
-#### SPI 互斥方案
-- OLED 线程拥有 SPI 互斥锁 (`s_spi_mutex`)
-- LED 代码通过 `oled_spi_lock()/unlock()` 请求访问
-- 避免循环依赖：LED → OLED API → SPI 资源保护
-
----
-
-### v1.0.6 (2026-03-14)
-**功能：蜂鸣器驱动**
-
-#### 硬件
-- GPIO PE6 → 有源蜂鸣器驱动 MOSFET
-- 队列机制实现异步音效播放
-
-#### 预设音效
-| 函数 | 描述 |
-|------|------|
-| `buzz_keypress()` | 按键音 |
-| `buzz_info()` | 信息提示音 |
-| `buzz_task_start()` | 任务开始音 |
-| `buzz_task_done()` | 任务完成音 |
-| `buzz_low_battery()` | 低电量警报 |
-| `buzz_general_error()` | 一般错误警报 |
-
----
-
-## 项目结构
-
-```
-applications/
-├── main.c                     # 主程序入口 (v1.0.11)
-├── global_conf.h              # 全局配置宏定义
-├── Peripherals/               # 硬件驱动层
-│   ├── buzzer.c/h             # 蜂鸣器 ✅ v1.0.6
-│   ├── led.c/h                # LED 指示灯 ✅ v1.0.7
-│   ├── wonder_echo.c/h        # AI 语音模块 ⭐ NEW v1.0.11
-│   ├── canopen_motor.c/h      # CANopen 电机驱动 ⭐ NEW v1.0.11
-│   ├── rs485_ultrasonic.c/h   # RS485 超声波 ⭐ v1.0.10
-│   ├── qmi8658.c/h            # IMU 姿态传感器 ⭐ v1.0.9
-│   └── ...                    # 更多驱动待添加
-├── Portings/                  # IO 初始化 + 队列接口 (待创建)
-├── System/                    # 系统服务层 (待创建)
-└── Misc/                      # 工具库 (待创建)
-```
-
-## 编译与烧录
-
-### 环境准备
-```bash
-cd D:\iHomeRobotProject\rt-thread\rt-thread-5.2.2\rt-thread\bsp\stm32\stm32f407VG-irobot
-.\env-windows-v2.0.0\env-windows\env.exe pkgs --update
-```
-
-### 编译
-```bash
-.\env-windows-v2.0.0\env-windows\env.exe scons --target=mdk5
-```
-
-### 烧录
-使用 Keil5 MDK 打开生成的 `.uvprojx` 工程文件，点击 Load 按钮。
-
-## 下一步计划
-
-- [ ] CANopen 电机调试
-- [ ] WonderEcho 语音唤醒测试
-- [ ] OTA 升级验证
-- [ ] 故障诊断系统
-- [ ] 电源管理系统
-
----
-*最后更新：2026-03-14*  
-*作者：Wuji (AI Assistant)*
+-  [xxx](https://个人主页), 邮箱：<xxx@xxx.com>

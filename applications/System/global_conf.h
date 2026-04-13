@@ -21,16 +21,32 @@
 #define APP_VERSION_PATCH         2
 #define APP_VERSION_STRING        "1.0.2"
 
+/* ========== ADC Device Name ========== */
+#define ADC_DEV_NAME                "adc1"
+enum adc1_channel {
+    ADC1_CH4  = 4,
+    ADC1_CH5  = 5,
+    ADC1_CH6  = 6,
+    ADC1_CH7  = 7,
+    ADC1_CH10 = 10,
+    ADC1_CH11 = 11,
+    ADC1_CH12 = 12,
+    ADC1_CH13 = 13,
+    ADC1_CH14 = 14,
+    ADC1_CH15 = 15,
+    ADC1_CH17 = 17,   // 内部参考电压（VREFINT）
+};
+
 
 /* ======================== 硬件平台选择 ======================== */
 
 /**
  * @brief 选择超声波传感器方案（二选一）
  *   - ULTRASONIC_485: 防水型 RS485 超声波（7 个级联）- 实际项目方案
- *   - ULTRASONIC_GPIO: 普通 HC-SR04 超声波（8 个 GPIO 控制）
+ *   - ULTRASONIC_GPIO: 普通 HC-SR04 超声波（5 个 GPIO 控制 pc7,pc8,pc9=hc138+hc125 pa1=trig脉冲 + hc32 pc6=echo中断）
  */
 #define ULTRASONIC_485            // 使用 RS485 方案（实际项目）
-// #define ULTRASONIC_GPIO         // 调试用临时方案
+//#define ULTRASONIC_GPIO         // 使用 hc138+hc125+hc32 方案
 
 
 /* ======================== LED 指示灯配置 ======================== */
@@ -115,6 +131,16 @@
 #define ULTRASONIC_C_PIN          GET_PIN(C, 9)     // 74HC138 C
 #define ULTRASONIC_TRIG_PIN       GET_PIN(A, 8)     // Trig 共用
 #define ULTRASONIC_ECHO_PIN       GET_PIN(C, 6)     // Echo 输入（中断）
+// 定时器选择（TIM3 通道无特殊要求，仅作基本定时）
+#define ULTRASONIC_TIMER          TIM3
+// 最大传感器数量
+#define HC_SR04_NUM               8
+// 超时时间（ms）
+#define HC_SR04_TIMEOUT_MS        50
+// 1轮询8个超声波时长(ms)
+#define POLL_INTERVAL_MS					500
+// 声速（mm/us）：340m/s = 0.34mm/us，半程往返需除以2 => 0.17mm/us
+#define SOUND_SPEED_MM_PER_US     0.17f
 
 
 /* ======================== OLED 显示屏配置 ======================== */
@@ -165,8 +191,8 @@
 
 #define BATTERY_FULL_VOLTAGE_MV   25200               // 25.2V 锂电池满电
 #define BATTERY_LOW_VOLTAGE_MV    19200               // 19.2V ≈20% 低电量阈值
-
-
+#define BATTERY_LOW_ALARM_MV      22000   // 22.0V 低电量报警阈值 为确保移动马桶有足够电量返回充电座，建议将低电量报警阈值设为 22.0V（约60%剩余容量）
+#define BATTERY_LOW_HYSTERESIS_MV   100   // 退出阈值比进入阈值高 100mV
 /* ======================== 充电口检测配置 ======================== */
 
 /**
@@ -176,9 +202,9 @@
  * PE4 = 充电 MOSFET 控制
  */
 #define CHARGER_DETECT_PIN        GET_PIN(A, 5)
-#define CHARGER_DETECT_ADC        ADC1_IN5
+#define CHARGER_DETECT_ADC        ADC1_CH5
 #define CHARGER_SAMPLE_PIN        GET_PIN(A, 4)
-#define CHARGER_SAMPLE_ADC        ADC1_IN4
+#define CHARGER_SAMPLE_ADC        ADC1_CH4
 #define CHARGER_CONTROL_PIN       GET_PIN(E, 4)
 
 
@@ -191,7 +217,7 @@
  */
 #define HEATER_CTRL_PIN           GET_PIN(E, 5)       // 加热管 MOSFET
 #define HEATER_DETECT_PIN         GET_PIN(A, 6)       // ADC1_IN6 - 检测供电接口连接
-#define HEATER_DETECT_ADC         ADC1_IN6
+#define HEATER_DETECT_ADC         ADC1_CH6
 
 /**
  * @brief 暖风烘干电热丝
@@ -201,9 +227,16 @@
 
 /**
  * @brief 大水泵 MOSFET 控制 (STP55NF06L)
- * PE2 = IO 输出，无 PWM 功能，程序模拟 8KHz PWM
+ * PA1 = IO 输出，可 PWM 功能
  */
-#define LARGE_PUMP_PIN            GET_PIN(E, 2)
+//#define LARGE_PUMP_PIN            GET_PIN(E, 2)
+#define LARGE_PUMP_PIN            GET_PIN(A, 1)
+
+/**
+ * @brief 排污泵 MOSFET 控制 (STP55NF06L)
+ * PE2 = IO 输出
+ */
+#define SEWAGE_PUMP_PIN           GET_PIN(E, 2)      
 
 /**
  * @brief 小水泵 PWM 控制（温水冲洗臀部/女士）
@@ -263,9 +296,9 @@
  * PC4 = ADC1_IN14（后悬崖）
  */
 #define CLIFF_FRONT_PIN           GET_PIN(A, 7)
-#define CLIFF_FRONT_ADC           ADC1_IN7
+#define CLIFF_FRONT_ADC           ADC1_CH7
 #define CLIFF_REAR_PIN            GET_PIN(C, 4)
-#define CLIFF_REAR_ADC            ADC1_IN14
+#define CLIFF_REAR_ADC            ADC1_CH14
 
 
 /* ======================== 水温传感器配置 ======================== */
@@ -275,7 +308,7 @@
  * PC5 = ADC1_IN15（与后悬崖不同通道）
  */
 #define WATER_TEMP_PIN            GET_PIN(C, 5)
-#define WATER_TEMP_ADC            ADC1_IN15
+#define WATER_TEMP_ADC            ADC1_CH15
 
 
 /* ======================== 对射管充电对准配置 ======================== */
@@ -313,10 +346,16 @@
 /* ======================== 其他 IO 配置 ======================== */
 
 /**
- * @brief 左大灯 PWM
- * PA1 = TIM5_CH2 (PWM1)
+ * @brief 左大灯 
+ * PD6 第二个 ULN2803 驱动 Out5/6合并加强驱动
  */
-#define HEADLIGHT_PWM_PIN         GET_PIN(A, 1)
+#define HEADLIGHT_LEFT_PIN        GET_PIN(D, 6)
+
+/**
+ * @brief 右大灯 
+ * PD7 第二个 ULN2803 驱动 Out7/8 合并加强驱动
+ */
+#define HEADLIGHT_RIGHT_PIN        GET_PIN(D, 7)
 
 /**
  * @brief 紫外灯、红外灯、风扇、水阀
@@ -329,11 +368,9 @@
 
 /**
  * @brief 水阀控制（预留）
- * PD5/6/7 - ULN2803 Out5/6/7 合并加强驱动（预留）
+ * PD5 - ULN2803 
  */
 #define WATER_VALVE_PIN_1         GET_PIN(D, 5)
-#define WATER_VALVE_PIN_2         GET_PIN(D, 6)
-#define WATER_VALVE_PIN_3         GET_PIN(D, 7)
 
 
 /* ======================== 串口调试配置 ======================== */

@@ -18,10 +18,13 @@
  */
 
 #include <rtthread.h>
-#include <board.h>
+#include <rtdevice.h>      /* 添加，提供引脚操作和中断控制 */
+#include <board.h>	 			/* 提供 GET_PIN 等 */
 #include "button.h"
 #include "global_conf.h"
 
+/* 将系统 tick 转换为毫秒 */
+#define rt_tick_get_millisecond() (rt_tick_get()) //(rt_tick_get() * 1000 / RT_TICK_PER_SECOND)   // 本系统的 RT_TICK_PER_SECOND = 1000
 
 /**
  * @brief Button state array (4 individual buttons)
@@ -36,7 +39,7 @@ static rt_timer_t s_scan_timer = RT_NULL;
 /**
  * @brief IPC Objects for notification
  */
-static rt_messageq_t s_page_queue = RT_NULL;     /* Queue for page change events */
+static rt_mq_t s_page_queue = RT_NULL;     /* Queue for page change events */
 static rt_sem_t s_home_signal = RT_NULL;         /* Semaphore for HOME press */
 
 /**
@@ -169,7 +172,11 @@ static void button_send_page_change(rt_uint32_t page_id)
     if (s_page_queue != RT_NULL)
     {
         /* Send immediately without blocking - if queue full, just drop it */
-        rt_mq_send(s_page_queue, &page_id, sizeof(page_id));
+        rt_err_t res = rt_mq_send(s_page_queue, &page_id, sizeof(page_id));
+//        rt_kprintf("[Button] Sent page change: 0x%08lx, res=%d\n", page_id, res);
+//				rt_kprintf("[Button] s_page_queue=0x%p\n", s_page_queue);
+    } else {
+        rt_kprintf("[Button] WARN: s_page_queue is NULL!\n");
     }
 }
 
@@ -182,7 +189,8 @@ static void button_trigger_home_signal(void)
     if (s_home_signal != RT_NULL)
     {
         /* Give semaphore - wakes up waiting navigation task */
-        rt_sem_post(s_home_signal);
+        rt_sem_release(s_home_signal);
+				rt_kprintf("[Button] send home signal\n");
     }
 }
 
@@ -416,7 +424,7 @@ rt_uint32_t button_get_time_since_press(ButtonId_t id)
 /**
  * @brief Get the page message queue handle
  */
-rt_messageq_t button_get_page_queue(void)
+rt_mq_t button_get_page_queue(void)
 {
     return s_page_queue;
 }
@@ -436,6 +444,43 @@ rt_sem_t button_get_home_semaphore(void)
 #ifdef RT_USING_MSH
 
 #include <msh.h>
+void temp_callback(ButtonId_t id, ButtonEvent_t event)
+{
+		const char* event_name = "";
+    static uint8_t short_count[BUTTON_TOTAL_COUNT] = {0};
+    static uint8_t long_count[BUTTON_TOTAL_COUNT] = {0};
+		
+		switch (event)
+		{
+				case BUTTON_EVENT_SHORT_PRESS:
+						event_name = "SHORT";
+						short_count[id]++;
+						break;
+				case BUTTON_EVENT_LONG_PRESS:
+						event_name = "LONG";
+						long_count[id]++;
+						break;
+				case BUTTON_EVENT_RELEASE:
+						event_name = "RELEASE";
+						break;
+				default:
+						event_name = "NONE";
+						break;
+		}
+		
+		const char* button_name = "";
+		switch (id)
+		{
+				case BUTTON_ID_SW3: button_name = "SW3(PC13)"; break;
+				case BUTTON_ID_SW4: button_name = "SW4(PC14)"; break;
+				case BUTTON_ID_SW5: button_name = "SW5(PC15)"; break;
+				case BUTTON_ID_HOME: button_name = "HOME(PE9)"; break;
+				default: button_name = "UNKNOWN"; break;
+		}
+		
+		rt_kprintf("%-12s => %-12s [Short:%d Long:%d]\n", 
+							 button_name, event_name, short_count[id], long_count[id]);
+}
 
 static void button_test(int argc, char** argv)
 {
@@ -443,46 +488,7 @@ static void button_test(int argc, char** argv)
     rt_kprintf("Testing all buttons...\n");
     rt_kprintf("Press any button to see event log\n");
     rt_kprintf("--------------------------------------\n\n");
-    
-    static uint8_t short_count[BUTTON_TOTAL_COUNT] = {0};
-    static uint8_t long_count[BUTTON_TOTAL_COUNT] = {0};
-    
-    void temp_callback(ButtonId_t id, ButtonEvent_t event)
-    {
-        const char* event_name = "";
-        
-        switch (event)
-        {
-            case BUTTON_EVENT_SHORT_PRESS:
-                event_name = "SHORT";
-                short_count[id]++;
-                break;
-            case BUTTON_EVENT_LONG_PRESS:
-                event_name = "LONG";
-                long_count[id]++;
-                break;
-            case BUTTON_EVENT_RELEASE:
-                event_name = "RELEASE";
-                break;
-            default:
-                event_name = "NONE";
-                break;
-        }
-        
-        const char* button_name = "";
-        switch (id)
-        {
-            case BUTTON_ID_SW3: button_name = "SW3(PC13)"; break;
-            case BUTTON_ID_SW4: button_name = "SW4(PC14)"; break;
-            case BUTTON_ID_SW5: button_name = "SW5(PC15)"; break;
-            case BUTTON_ID_HOME: button_name = "HOME(PE9)"; break;
-            default: button_name = "UNKNOWN"; break;
-        }
-        
-        rt_kprintf("%-12s => %-12s [Short:%d Long:%d]\n", 
-                   button_name, event_name, short_count[id], long_count[id]);
-    }
-    
+     
     button_register_callback(BUTTON_ID_SW3, temp_callback);
     button_register_callback(BUTTON_ID_SW4, temp_callback);
     button_register_callback(BUTTON_ID_SW5, temp_callback);

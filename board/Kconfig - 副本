@@ -337,13 +337,34 @@ menu "On-chip Peripheral Drivers"
 		select RT_USING_I2C
 		select STM32F4_HAL_I2C
 		if BSP_USING_I2C
-			config BSP_USING_HARD_I2C1
+			 config BSP_USING_I2C1
 				bool "Enable I2C1 BUS"
 				default y
-			config BSP_USING_HARD_I2C2
-				bool "Enable I2C2 BUS"
-				default y
-		endif
+				if BSP_USING_I2C1
+                    config BSP_I2C1_SCL_PIN
+                        int "i2c1 scl pin number,PB6=22"
+                        range 0 143
+                        default 22
+                    config BSP_I2C1_SDA_PIN
+                        int "I2C1 sda pin number,PB7=23"
+                        range 0 143
+                        default 23
+                endif
+				
+            config BSP_USING_I2C2
+                bool "Enable I2C2 BUS"
+                default y
+				if BSP_USING_I2C2
+                    config BSP_I2C2_SCL_PIN
+                        int "i2c2 scl pin number, PB10=26"
+                        range 0 143
+                        default 26
+                    config BSP_I2C2_SDA_PIN
+                        int "I2C2 sda pin number, PB11=27"
+                        range 0 143
+                        default 27
+                endif
+		endif	
 		
     source "$(BSP_DIR)/../libraries/HAL_Drivers/drivers/Kconfig"
 
