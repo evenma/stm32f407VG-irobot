@@ -40,15 +40,6 @@ enum adc1_channel {
 
 /* ======================== 硬件平台选择 ======================== */
 
-/**
- * @brief 选择超声波传感器方案（二选一）
- *   - ULTRASONIC_485: 防水型 RS485 超声波（7 个级联）- 实际项目方案
- *   - ULTRASONIC_GPIO: 普通 HC-SR04 超声波（5 个 GPIO 控制 pc7,pc8,pc9=hc138+hc125 pa1=trig脉冲 + hc32 pc6=echo中断）
- */
-#define ULTRASONIC_485            // 使用 RS485 方案（实际项目）
-//#define ULTRASONIC_GPIO         // 使用 hc138+hc125+hc32 方案
-
-
 /* ======================== LED 指示灯配置 ======================== */
 
 /**
@@ -106,7 +97,13 @@ enum adc1_channel {
 #define CAN_TX_PIN                GET_PIN(A, 12)    // PA12 = CAN_TX
 #define CAN_RX_PIN                GET_PIN(A, 11)    // PA11 = CAN_RX
 
-
+/**
+ * @brief 选择超声波传感器方案（二选一）
+ *   - ULTRASONIC_485: 防水型 RS485 超声波（7 个级联）- 实际项目方案
+ *   - ULTRASONIC_GPIO: 普通 HC-SR04 超声波（5 个 GPIO 控制 pc7,pc8,pc9=hc138+hc125 pa1=trig脉冲 + hc32 pc6=echo中断）
+ */
+//#define ULTRASONIC_485            // 使用 RS485 方案（实际项目）
+#define ULTRASONIC_GPIO         // 使用 hc138+hc125+hc32 方案
 /* ======================== RS485 超声波配置 ======================== */
 
 /**
@@ -117,7 +114,7 @@ enum adc1_channel {
 #define UART485_RX_PIN            GET_PIN(C, 10)
 #define UART485_TX_PIN            GET_PIN(C, 11)
 #define UART485_DE_PIN            GET_PIN(D, 0)
-
+#define RS485_DIR_PIN           	GET_PIN(D, 0) /* PD0 方向控制引脚，高电平发送，低电平接收 */
 
 /* ======================== GPIO 超声波配置 ======================== */
 
@@ -135,10 +132,14 @@ enum adc1_channel {
 #define ULTRASONIC_TIMER          TIM3
 // 最大传感器数量
 #define HC_SR04_NUM               8
-// 超时时间（ms）
+#define ULTRASONIC_485_NUM     		7
+// 单个传感器超时时间（ms）基本在32ms
 #define HC_SR04_TIMEOUT_MS        50
+/* 单个传感器超时时间（ms），需大于传感器最大响应时间 (处理值响应时间 320～750ms) */
+#define RS485_TIMEOUT_MS      		750
 // 1轮询8个超声波时长(ms)
-#define POLL_INTERVAL_MS					500
+#define POLL_INTERVAL_MS					500    // hc_sr04
+#define POLL_INTERVAL_485_MS			1000    // 485
 // 声速（mm/us）：340m/s = 0.34mm/us，半程往返需除以2 => 0.17mm/us
 #define SOUND_SPEED_MM_PER_US     0.17f
 

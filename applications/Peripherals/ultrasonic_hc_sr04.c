@@ -9,7 +9,7 @@ typedef enum {
     SEND_MODE_PER_ROUND     /* 一轮全部测完后统一发送 */
 } send_mode_t;
 
-static send_mode_t current_send_mode = SEND_MODE_PER_SENSOR;  /* 默认实时发送 */
+static send_mode_t current_send_mode = SEND_MODE_PER_ROUND;  /* 默认一轮读取完成再发送 */
 
 /* 硬件定时器设备句柄 */
 static rt_device_t hw_timer = RT_NULL;
@@ -26,6 +26,10 @@ static struct rt_mutex poll_mutex;   /* 互斥锁，避免与手动命令冲突 
 
 static void ultrasonic_poll(void);
 static uint8_t poll_print_enabled = 0;   /* 默认关闭打印 */
+
+/* 距离缓存（用于 OLED 显示）*/
+static uint32_t s_hc_distances[HC_SR04_NUM] = {0};
+static struct rt_mutex s_hc_dist_mutex;
 
 /* 译码器真值表 */
 //static const uint8_t decoder_table[8][3] = {
@@ -244,6 +248,17 @@ rt_err_t hc_sr04_read_distance(uint8_t index, uint32_t *distance_mm, uint32_t ti
     return RT_EOK;
 }
 
+void hc_sr04_get_distances(uint32_t *dist_array, uint8_t len)
+{
+    uint8_t i;
+    uint8_t copy_len = len < HC_SR04_NUM ? len : HC_SR04_NUM;
+    rt_mutex_take(&s_hc_dist_mutex, RT_WAITING_FOREVER);
+    for (i = 0; i < copy_len; i++) {
+        dist_array[i] = s_hc_distances[i];
+    }
+    rt_mutex_release(&s_hc_dist_mutex);
+}
+
 /* 初始化互斥锁（在驱动初始化函数中调用） */
 static void poll_mutex_init(void)
 {
@@ -264,6 +279,7 @@ rt_err_t hc_sr04_init(void)
     rt_completion_init(&echo_completion);
 	
 		poll_mutex_init();
+		rt_mutex_init(&s_hc_dist_mutex, "hc_dist", RT_IPC_FLAG_PRIO);
 	
 		ultrasonic_poll();
 
@@ -271,7 +287,7 @@ rt_err_t hc_sr04_init(void)
     return RT_EOK;
 }
 
-int32_t rt_tick_to_millisecond(rt_tick_t tick_diff)
+static int32_t rt_tick_to_millisecond(rt_tick_t tick_diff)
 {
     // 返回 tick_diff * 1000 / RT_TICK_PER_SECOND
     return (int32_t)((tick_diff * 1000) / RT_TICK_PER_SECOND);
@@ -300,6 +316,16 @@ static void poll_entry(void *parameter)
             rt_mutex_take(&poll_mutex, RT_WAITING_FOREVER);
             ret = measure_once(i, &dist_mm, 100);
             rt_mutex_release(&poll_mutex);
+					    // 更新距离缓存（用于 OLED）
+						if (ret == RT_EOK) {
+								rt_mutex_take(&s_hc_dist_mutex, RT_WAITING_FOREVER);
+								s_hc_distances[i] = dist_mm;
+								rt_mutex_release(&s_hc_dist_mutex);
+						} else {
+								rt_mutex_take(&s_hc_dist_mutex, RT_WAITING_FOREVER);
+								s_hc_distances[i] = 0;   // 无效值，OLED 会显示 ---
+								rt_mutex_release(&s_hc_dist_mutex);
+						}
 
             if (current_send_mode == SEND_MODE_PER_SENSOR)
             {
@@ -343,8 +369,8 @@ static void poll_entry(void *parameter)
         int32_t delay_ms = POLL_INTERVAL_MS - rt_tick_to_millisecond(elapsed);
         if (delay_ms > 0)
             rt_thread_mdelay(delay_ms);
-        else
-            rt_thread_yield();  // 已经超时，让出 CPU
+				else 
+					rt_thread_mdelay(10);    // 超时，下一次轮询过渡时间10ms
     }
 }
 

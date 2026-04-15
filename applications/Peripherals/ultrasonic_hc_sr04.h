@@ -18,4 +18,11 @@ rt_err_t hc_sr04_init(void);
  */
 rt_err_t hc_sr04_read_distance(uint8_t index, uint32_t *distance_mm, uint32_t timeout_ms);
 
+/**
+ * @brief 获取所有传感器的距离值（用于 OLED 显示）
+ * @param dist_array 输出数组，长度至少为 HC_SR04_NUM
+ * @param len 数组长度
+ */
+void hc_sr04_get_distances(uint32_t *dist_array, uint8_t len);
+
 #endif /* __ULTRASONIC_HC_SR04_H__ */

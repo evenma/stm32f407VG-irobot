@@ -26,6 +26,11 @@
 #include "print_utils.h"
 #include "monitor.h"
 #include "user_action.h"
+#ifdef ULTRASONIC_GPIO
+    #include "ultrasonic_hc_sr04.h"
+#elif defined(ULTRASONIC_485)
+    #include "ultrasonic_485.h"
+#endif
 /**
  * ========== Global Variables ==========
  */
@@ -658,16 +663,75 @@ static void render_pid_tuning_page(u8g2_t* u8g2)
 
 static void render_ultrasonic_page(u8g2_t* u8g2)
 {
-	  oled_draw_title_bar("Ultrasonic", RT_TRUE);
+    oled_draw_title_bar("Ultrasonic", RT_TRUE);
     u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
     uint8_t y = 30;
-    u8g2_DrawStr(u8g2, 8, y, "Front: 152 mm");
+    char buf[24];   // 足够大
+
+#ifdef ULTRASONIC_GPIO
+    uint32_t dist[8] = {0};
+    hc_sr04_get_distances(dist, 8);
+    // 第一行
+    u8g2_DrawStr(u8g2, 8, y, "F:");
+    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Back:   89 mm");
+    // 第二行
+    u8g2_DrawStr(u8g2, 8, y, "TS:");
+    rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Left:  124 mm");
+    // 第三行
+    u8g2_DrawStr(u8g2, 8, y, "BS:");
+    rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Right: 118 mm");
+    // 第四行
+    u8g2_DrawStr(u8g2, 8, y, "R:");
+    rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[7] ? "%4dmm" : "---", dist[7]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+
+#elif defined(ULTRASONIC_485)
+    uint32_t dist[7] = {0};
+    ultrasonic_485_get_distances(dist, 7);
+    // 第一行
+    u8g2_DrawStr(u8g2, 8, y, "F:");
+    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第二行
+    u8g2_DrawStr(u8g2, 8, y, "TS:");
+    rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第三行
+    u8g2_DrawStr(u8g2, 8, y, "BS:");
+    rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第四行（后方只有中间一个）
+    u8g2_DrawStr(u8g2, 8, y, "R:");
+    rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
+
+#else
+    u8g2_DrawStr(u8g2, 8, 30, "Ultrasonic: None");
+#endif
 }
 
 static void render_ir_sensor_page(u8g2_t* u8g2)

@@ -25,10 +25,11 @@ typedef struct {
     float scale[MONITOR_CH_COUNT]; // 各通道比例系数
     int32_t charge_diff_offset;    // 充电压差偏移（mV）
     // 可以继续添加其他需要保存的校准参数
+		uint32_t ultrasonic_baudrate;  // 超声波传感器波特率
 } MonitorCalibData_t;
 
 #define MONITOR_CALIB_MAGIC  0x4D4F4E49   // "MONI" 的 ASCII 码
-#define MONITOR_CALIB_VERSION 1
+#define MONITOR_CALIB_VERSION 2
 
 
 rt_bool_t monitor_get_water_high_level(void);
@@ -56,5 +57,7 @@ rt_uint32_t monitor_get_heater_voltage(void);
  * @brief Initialize monitoring system (creates a thread to periodically read ADC)
  */
 void monitor_init(void);
+
+uint32_t monitor_get_ultrasonic_baudrate(void);
 
 #endif /* PERIPHERALS_MONITOR_H__ */

@@ -8,8 +8,11 @@
 #include "board.h"
 #include <string.h>
 #include <fal.h>
+#include "ultrasonic_485.h"
 
 static const char *DATA_PARTITION_NAME = "data";  // 与分区表名称一致
+static uint32_t s_loaded_ultrasonic_baudrate = 0; 
+
 // 声明外部变量，用于 OLED 显示
 extern int g_oled_battery_mv;
 extern int g_charge_power_mw;
@@ -80,7 +83,7 @@ static rt_bool_t s_water_low_level  = RT_FALSE;   // 低水位状态
 /**
  * @brief 保存校准数据到 Flash 分区
  */
-static void monitor_save_calibration(void)
+void monitor_save_calibration(void)
 {
     data_part = fal_partition_find(DATA_PARTITION_NAME);
     if (data_part == RT_NULL) {
@@ -93,6 +96,7 @@ static void monitor_save_calibration(void)
     calib_data.version = MONITOR_CALIB_VERSION;
     memcpy(calib_data.scale, s_scale, sizeof(s_scale));
     calib_data.charge_diff_offset = s_charge_diff_offset;
+		calib_data.ultrasonic_baudrate = ultrasonic_485_get_baudrate();
 
     // 写入 Flash（注意：需要先擦除再写入，FAL 的 write 接口不会自动擦除）
     if (fal_partition_erase(data_part,0, sizeof(calib_data)) < 0) {
@@ -133,12 +137,22 @@ static rt_bool_t monitor_load_calibration(void)
     // 加载数据到全局变量
     memcpy(s_scale, calib_data.scale, sizeof(s_scale));
     s_charge_diff_offset = calib_data.charge_diff_offset;
+		
+		if (calib_data.magic == MONITOR_CALIB_MAGIC && calib_data.version >= 2) {
+        s_loaded_ultrasonic_baudrate = calib_data.ultrasonic_baudrate;
+    } else {
+        // 旧版本，使用默认值
+        s_loaded_ultrasonic_baudrate = 115200;
+    }
 
     rt_kprintf("[MONITOR] Calibration data loaded from Flash.\n");
     return RT_TRUE;
 }
 
-
+uint32_t monitor_get_ultrasonic_baudrate(void)
+{
+    return s_loaded_ultrasonic_baudrate;
+}
 
 /* ========== Utility Functions ========== */
 
