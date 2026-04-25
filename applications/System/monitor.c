@@ -9,6 +9,7 @@
 #include <string.h>
 #include <fal.h>
 #include "ultrasonic_485.h"
+#include "zltech_can_motor.h"
 
 static const char *DATA_PARTITION_NAME = "data";  // 与分区表名称一致
 static uint32_t s_loaded_ultrasonic_baudrate = 0; 
@@ -247,6 +248,7 @@ static void adc_read_all_channels(rt_uint32_t *battery_raw,
 /* ========== Monitor Thread ========== */
 static void monitor_thread_entry(void *parameter)
 {
+	  uint32_t hb_check_counter = 0;   // 心跳检查计数器（每50ms加1，达到10次即500ms检查一次）
     rt_uint32_t battery_raw, charger_raw, heater_raw, charger_sample_raw, vrefint_raw;
     rt_uint32_t filtered_battery, filtered_charger, filtered_heater, filtered_charger_sample, filtered_vrefint;
 		int32_t effective_diff = 0;
@@ -418,6 +420,12 @@ static void monitor_thread_entry(void *parameter)
 								rt_kprintf("[MONITOR] charge power=%d W (eff diff=%d mV),current = %d mA\n", s_charge_power_mw/1000, effective_diff,effective_diff*20 );
             }
         }
+				
+				// zlac 心跳包检测 
+				if (hb_check_counter >= 10) {  
+						hb_check_counter = 0;
+						zlac_check_heartbeat(); 
+				}
 
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
