@@ -24,6 +24,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+volatile rt_bool_t s_velocity_mode_ready = RT_FALSE;
+volatile rt_bool_t s_brake_released = RT_FALSE;      // 刹车是否已释放
+volatile rt_bool_t s_left_enabled = RT_FALSE;        // 左电机使能状态
+volatile rt_bool_t s_right_enabled = RT_FALSE;       // 右电机使能状态
+
 /* ======================== 内部数据结构 ======================== */
 static rt_device_t s_can_dev = RT_NULL;
 static struct rt_semaphore s_sdo_sem;
@@ -33,6 +38,8 @@ static rt_bool_t s_heartbeat_running = RT_FALSE;
 static volatile uint32_t s_last_hb_tick = 0;
 static volatile uint8_t s_node_state = 0;           /* 心跳状态 (0x00 boot, 0x04 stop, 0x05 op, 0x7F preop) */
 static volatile rt_bool_t s_online = RT_FALSE;
+static uint8_t s_fail_count = 0;
+static uint32_t s_last_recovery_tick = 0;
 
 /* 接收信号量与线程 */
 static struct rt_semaphore s_rx_sem;
@@ -50,7 +57,7 @@ static rt_bool_t s_right_motor_reverse = RT_TRUE;  // 默认反转右电机
 static ZlacOpMode_t s_current_mode = ZLAC_MODE_UNKNOWN;
 /* 当前期望的位置运动模式（默认绝对）*/
 static ZlacPositionMode_t s_position_mode = ZLAC_POS_MODE_ABSOLUTE;
-static rt_bool_t s_velocity_mode_ready = RT_FALSE;
+
 static rt_bool_t s_position_mode_ready = RT_FALSE;
 
 /* 接收到的实际速度 (通过 TPDO 更新) */
@@ -291,13 +298,24 @@ rt_err_t zlac_control_enable(void)
     ret = write_controlword(0x07);      // Switch on
     if (ret != RT_EOK) return ret;
     rt_thread_mdelay(20);
-    ret = write_controlword(0x0F);      // Enable operation
+    ret = write_controlword(0x0F); 
+    if (ret == RT_EOK) {
+        // 启用后，可直接认为使能成功，但为了准确，可读取状态字验证
+        s_left_enabled = RT_TRUE;
+        s_right_enabled = RT_TRUE;
+    }	// Enable operation
     return ret;
 }
 
 rt_err_t zlac_control_disable(void)
 {
-    return write_controlword(0x07);   // Disable operation
+	    rt_err_t ret;
+		ret = write_controlword(0x07);   // Disable operation
+		if (ret == RT_EOK) {
+			s_left_enabled = RT_FALSE;
+			s_right_enabled = RT_FALSE;	
+		}
+    return ret;
 }
 
 rt_err_t zlac_control_quickstop(void)
@@ -318,7 +336,13 @@ rt_err_t zlac_control_fault_reset(void)
 rt_err_t zlac_control_free(void)
 {
     // 写入控制字 0x00，使驱动器进入 Switch on disabled 状态
-    return write_controlword(0x00);
+	rt_err_t ret;
+		ret = write_controlword(0x00);    
+		if (ret == RT_EOK) {
+			s_left_enabled = RT_FALSE;
+			s_right_enabled = RT_FALSE;	
+		}
+    return ret;
 }
 
 /* ======================== NMT 服务 ======================== */
@@ -351,7 +375,7 @@ static rt_err_t zlac_set_op_mode(ZlacOpMode_t mode)
     if (ret == RT_EOK) s_current_mode = mode;
     return ret;
 }
-static ZlacOpMode_t zlac_get_op_mode(void)
+ZlacOpMode_t zlac_get_op_mode(void)
 {
     uint8_t data;
     if (zlac_sdo_read(ZLAC_OD_MODE_DISPLAY, 0, &data, 1) == RT_EOK)
@@ -585,7 +609,7 @@ static rt_err_t zlac_config_velocity_mode_params(uint32_t accel_ms, uint32_t dec
 		rt_kprintf("op mode = %d\n",op);
 		
     // 3. 设置 S 形加速时间 (0x6083:01/02)
-	if(accel_ms != ZLAC_MOTOR_ACCEL_TIME_MS){
+//	if(accel_ms != ZLAC_MOTOR_V_ACCEL_TIME_MS){
 		data[0] = accel_ms & 0xFF;
 		data[1] = (accel_ms >> 8) & 0xFF;
 		data[2] = (accel_ms >> 16) & 0xFF;
@@ -594,9 +618,9 @@ static rt_err_t zlac_config_velocity_mode_params(uint32_t accel_ms, uint32_t dec
 		if (ret != RT_EOK) return ret;
 		ret = zlac_sdo_write(ZLAC_OD_PROFILE_ACCEL, 2, data, 4);
 		if (ret != RT_EOK) return ret;	
-	}
+//	}
     // 4. 设置 S 形减速时间 (0x6084:01/02)
-	if(decel_ms != ZLAC_MOTOR_DECEL_TIME_MS){		
+//	if(decel_ms != ZLAC_MOTOR_V_DECEL_TIME_MS){		
 		data[0] = decel_ms & 0xFF;
 		data[1] = (decel_ms >> 8) & 0xFF;
 		data[2] = (decel_ms >> 16) & 0xFF;
@@ -605,7 +629,7 @@ static rt_err_t zlac_config_velocity_mode_params(uint32_t accel_ms, uint32_t dec
 		if (ret != RT_EOK) return ret;
 		ret = zlac_sdo_write(ZLAC_OD_PROFILE_DECEL, 2, data, 4);
 		if (ret != RT_EOK) return ret;
-	}
+//	}
     return RT_EOK;
 }
 
@@ -619,7 +643,7 @@ rt_err_t zlac_init_velocity_mode(void)
 		rt_kprintf("zlac_config_pdo_for_velocity_mode ok!\n");
 
     // 2. 设置速度模式参数（同步标志、工作模式、加减速时间）
-    ret = zlac_config_velocity_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS);
+    ret = zlac_config_velocity_mode_params(ZLAC_MOTOR_V_ACCEL_TIME_MS, ZLAC_MOTOR_V_DECEL_TIME_MS);
     if (ret != RT_EOK) return ret;
 		rt_kprintf("zlac_config_velocity_mode_params ok!\n");
 
@@ -677,6 +701,7 @@ static rt_err_t config_rpdo1_for_position(void)
 }
 
 /* 配置 TPDO1 映射: 实际位置 6064:01 (左) I32和 6064:02 (右) I32 位 */
+// 废弃 位置映射到TPDO1 ,需要同时显示实时速度和实际位置 需要配置2个TPDO
 static rt_err_t config_tpdo1_for_position(void)
 {
     uint8_t data[4];
@@ -722,6 +747,54 @@ static rt_err_t config_tpdo1_for_position(void)
     if (ret != RT_EOK) return ret;
     return ret;
 }
+/* 配置 TPDO2 映射: 实际位置 6064:01 (左) 和 6064:02 (右) 32 位 */
+static rt_err_t config_tpdo2_for_position(void)
+{
+    uint8_t data[4];
+    // 清除原有映射
+    data[0] = 0;
+    rt_err_t ret = zlac_sdo_write(ZLAC_OD_TPDO_MAPPING + 2, 0, data, 1); // 索引 1A02h
+    if (ret != RT_EOK) return ret;
+    uint32_t map1 = 0x60640120;
+    data[0] = map1 & 0xFF;
+    data[1] = (map1 >> 8) & 0xFF;
+    data[2] = (map1 >> 16) & 0xFF;
+    data[3] = (map1 >> 24) & 0xFF;
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_MAPPING + 2, 1, data, 4);
+    if (ret != RT_EOK) return ret;
+    uint32_t map2 = 0x60640220;
+    data[0] = map2 & 0xFF;
+    data[1] = (map2 >> 8) & 0xFF;
+    data[2] = (map2 >> 16) & 0xFF;
+    data[3] = (map2 >> 24) & 0xFF;
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_MAPPING + 2, 2, data, 4);
+    if (ret != RT_EOK) return ret;
+
+    // 设置 TPDO2 通信参数 (1802h)
+    uint32_t cob_id = ZLAC_COBID_TPDO2(ZLAC_NODE_ID) & 0x7FFFFFFF; // 0x381
+    data[0] = cob_id & 0xFF;
+    data[1] = (cob_id >> 8) & 0xFF;
+    data[2] = (cob_id >> 16) & 0xFF;
+    data[3] = (cob_id >> 24) & 0xFF;
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_COMM_PARAM + 2, 1, data, 4); // 1802:01
+    if (ret != RT_EOK) return ret;
+    data[0] = 255; // 传输类型 255
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_COMM_PARAM + 2, 2, data, 1);
+    if (ret != RT_EOK) return ret;
+    data[0] = 50; data[1] = 0; // 禁止时间 5ms
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_COMM_PARAM + 2, 3, data, 2);
+    if (ret != RT_EOK) return ret;
+    uint16_t timer = 1000; // 事件计时器 500ms
+    data[0] = timer & 0xFF;
+    data[1] = (timer >> 8) & 0xFF;
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_COMM_PARAM + 2, 5, data, 2);
+		
+		// 映射数量为2 并使能
+    data[0] = 2;
+    ret = zlac_sdo_write(ZLAC_OD_TPDO_MAPPING + 2, 0, data, 1);
+    if (ret != RT_EOK) return ret;
+    return ret;
+}
 
 static rt_err_t zlac_config_pdo_for_position_mode(void)
 {
@@ -735,7 +808,8 @@ static rt_err_t zlac_config_pdo_for_position_mode(void)
 	
     ret = config_rpdo1_for_position();
     if (ret != RT_EOK) return ret;
-    ret = config_tpdo1_for_position();
+//    ret = config_tpdo1_for_position();
+	 ret = config_tpdo2_for_position();
     if (ret != RT_EOK) return ret;
 
     // 3. 重新启动节点，进入操作状态
@@ -761,7 +835,7 @@ static rt_err_t zlac_config_position_mode_params(uint32_t accel_ms, uint32_t dec
 		rt_kprintf("op mode = %d\n",op);
 
     // 2. 设置 S 形加速时间 (0x6083:01/02)
-	if(accel_ms != ZLAC_MOTOR_ACCEL_TIME_MS){
+//	if(accel_ms != ZLAC_MOTOR_ACCEL_TIME_MS){
     data[0] = accel_ms & 0xFF;
     data[1] = (accel_ms >> 8) & 0xFF;
     data[2] = (accel_ms >> 16) & 0xFF;
@@ -770,9 +844,9 @@ static rt_err_t zlac_config_position_mode_params(uint32_t accel_ms, uint32_t dec
     if (ret != RT_EOK) return ret;
     ret = zlac_sdo_write(ZLAC_OD_PROFILE_ACCEL, 2, data, 4);	// 右电机
     if (ret != RT_EOK) return ret;
-	}
+//	}
     // 3. 设置 S 形减速时间 (0x6084:01/02)
-	if(decel_ms != ZLAC_MOTOR_DECEL_TIME_MS){
+//	if(decel_ms != ZLAC_MOTOR_DECEL_TIME_MS){
     data[0] = decel_ms & 0xFF;
     data[1] = (decel_ms >> 8) & 0xFF;
     data[2] = (decel_ms >> 16) & 0xFF;
@@ -781,9 +855,8 @@ static rt_err_t zlac_config_position_mode_params(uint32_t accel_ms, uint32_t dec
     if (ret != RT_EOK) return ret;
     ret = zlac_sdo_write(ZLAC_OD_PROFILE_DECEL, 2, data, 4);
     if (ret != RT_EOK) return ret;
-	}
-    // 4. 设置最大速度 (0x6081:01/02) 单位 rpm
-	if(max_speed_rpm != ZLAC_MOTOR_MAX_RPM){
+//	}
+	// 4. 设置最大速度 (0x6081:01/02) 单位 rpm  最大速度设置为室内速度
     data[0] = max_speed_rpm & 0xFF;
     data[1] = (max_speed_rpm >> 8) & 0xFF;
     data[2] = 0;
@@ -792,7 +865,6 @@ static rt_err_t zlac_config_position_mode_params(uint32_t accel_ms, uint32_t dec
     if (ret != RT_EOK) return ret;
     ret = zlac_sdo_write(ZLAC_OD_PROFILE_VELOCITY, 2, data, 4);
     if (ret != RT_EOK) return ret;
-	}
 	
     return RT_EOK;
 }
@@ -810,7 +882,7 @@ rt_err_t zlac_init_position_mode(ZlacPositionMode_t mode)
     if (ret != RT_EOK) return ret;
 
     // 2. 设置位置模式参数
-    ret = zlac_config_position_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS, ZLAC_MOTOR_MAX_RPM);
+    ret = zlac_config_position_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS, ZLAC_MOTOR_NORMAL_RPM);
     if (ret != RT_EOK) return ret;
 
     // 3. 使能电机（标准序列）
@@ -823,51 +895,76 @@ rt_err_t zlac_init_position_mode(ZlacPositionMode_t mode)
     return RT_EOK;
 }
 
+/* 刷新状态缓存（由 monitor 线程定期调用）*/
+void zlac_refresh_status_cache(void)
+{
+    // 仅在速度模式或位置模式已初始化时才刷新，避免不必要的 SDO
+    if (!s_velocity_mode_ready && !s_position_mode_ready) {
+        return;
+    }
+    // 读取抱闸状态
+    uint16_t left_brake, right_brake;
+    if (zlac_get_brake(&left_brake, &right_brake) == RT_EOK) {
+        s_brake_released = (left_brake == 0 && right_brake == 0);  // 0 表示释放
+    }
+    // 读取左右电机状态字并判断使能状态
+    uint16_t left_sw = zlac_get_left_statusword();
+    uint16_t right_sw = zlac_get_right_statusword();
+    ZlacState_t left_state = zlac_get_state(left_sw);
+    ZlacState_t right_state = zlac_get_state(right_sw);
+    s_left_enabled = (left_state == ZLAC_STATE_OPERATION_ENABLED);
+    s_right_enabled = (right_state == ZLAC_STATE_OPERATION_ENABLED);
+}
 
 /* ======================== 速度控制 (PDO 发送) U32=I16+I16 带方向======================== */
 void zlac_set_right_motor_reverse(rt_bool_t reverse)
 {
     s_right_motor_reverse = reverse;
 }
+// 支持速度模式需要高频指令（如 20ms 周期）实现闭环调速
 rt_err_t zlac_set_velocity(int16_t left_rpm, int16_t right_rpm)
 {
-	// 检测刹车是否释放
-	    rt_err_t ret;
-				uint16_t left,right;
-			ret = zlac_get_brake(&left,&right);
-   if (ret != RT_EOK) return ret;
-		if(left || right) return ZLAC_ERR_BRAKE_UNRELEASE;
-
-		// 模式未就绪
+		if (!s_online) {
+				return -ZLAC_ERR_OFFLINE;
+		}
+			// 模式未就绪
 	  if (!s_velocity_mode_ready) {
         return -ZLAC_ERR_MODE_UNREADY;  // 或自定义错误码
     }
+	// 检测刹车是否释放    耗时操作，用标志位替代
+//	    rt_err_t ret;
+//				uint16_t left,right;
+//			ret = zlac_get_brake(&left,&right);
+//   if (ret != RT_EOK) return ret;
+//		if(left || right) return ZLAC_ERR_BRAKE_UNRELEASE;
+
 		
-	 // 检查驱动器是否处于使能状态（状态字低4位 = 0x07 且 bit5=1？实际标准为 Operation enabled = 0x27）
-    if (zlac_get_state(zlac_get_left_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
-        return ZLAC_ERR_INVALID_STATE;
-    }
-		if (zlac_get_state(zlac_get_right_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
-        return ZLAC_ERR_INVALID_STATE;
-    }
+	 // 检查驱动器是否处于使能状态（状态字低4位 = 0x07 且 bit5=1？实际标准为 Operation enabled = 0x27）耗时操作
+//    if (zlac_get_state(zlac_get_left_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+//        return ZLAC_ERR_INVALID_STATE;
+//    }
+//		if (zlac_get_state(zlac_get_right_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+//        return ZLAC_ERR_INVALID_STATE;
+//    }
 		
-		// 速度值的修正，如果超过阀值，设为最大值   不对，这样上位机就存在问题，上位机的速度pid会异常
-//		if(left_rpm > ZLAC_MOTOR_MAX_RPM ){
-//			left_rpm = ZLAC_MOTOR_MAX_RPM;
-//		}else if(left_rpm < -ZLAC_MOTOR_MAX_RPM){
-//		   left_rpm = -ZLAC_MOTOR_MAX_RPM;
-//		}
-//		if(right_rpm > ZLAC_MOTOR_MAX_RPM ){
-//			right_rpm = ZLAC_MOTOR_MAX_RPM;
-//		}else if(right_rpm < -ZLAC_MOTOR_MAX_RPM){
-//		   right_rpm = -ZLAC_MOTOR_MAX_RPM;
-//		}
-	
+    // 仅检查缓存标志，不调用任何 SDO 函数
+    if (!s_brake_released) return ZLAC_ERR_BRAKE_UNRELEASE;
+    if (!s_left_enabled || !s_right_enabled) return ZLAC_ERR_INVALID_STATE;
+		
+		if(left_rpm > ZLAC_MOTOR_MAX_RPM)
+			left_rpm = ZLAC_MOTOR_MAX_RPM;
+		else if(left_rpm < -ZLAC_MOTOR_MAX_RPM)
+			left_rpm = -ZLAC_MOTOR_MAX_RPM;
+		if(right_rpm > ZLAC_MOTOR_MAX_RPM)
+			right_rpm = ZLAC_MOTOR_MAX_RPM;		
+		else if(right_rpm < -ZLAC_MOTOR_MAX_RPM)
+			right_rpm = -ZLAC_MOTOR_MAX_RPM;
+		
 	// 小车前进，需要左轮逆时针，右轮顺时针运动
 		if (s_right_motor_reverse) {
         right_rpm = -right_rpm;
     }
-	// PD0的方式是为了速度控制及时性，但是又要读取状态，会增加很大延时，可以不做选择
+	// PDO的方式是为了速度控制及时性
 
     uint8_t data[4];
     data[0] = left_rpm & 0xFF;
@@ -906,7 +1003,30 @@ static rt_err_t zlac_set_position_abs(int32_t left_pulses, int32_t right_pulses)
 				uint16_t left,right;
 			ret = zlac_get_brake(&left,&right);
    if (ret != RT_EOK) return ret;
-		if(left || right) return RT_ERROR;
+		if(left || right) return ZLAC_ERR_BRAKE_UNRELEASE;
+	
+		if (!s_online) {
+				return -ZLAC_ERR_OFFLINE;
+		}
+
+	// 应用右电机方向反转（与速度模式保持一致）
+    if (s_right_motor_reverse) {
+        right_pulses = -right_pulses;
+    }
+
+			// 模式未就绪
+	  if (!s_position_mode_ready) {
+        return -ZLAC_ERR_MODE_UNREADY;  // 或自定义错误码
+    }
+
+	 // 检查驱动器是否处于使能状态（状态字低4位 = 0x07 且 bit5=1？实际标准为 Operation enabled = 0x27）
+    if (zlac_get_state(zlac_get_left_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+        return ZLAC_ERR_INVALID_STATE;
+    }
+		if (zlac_get_state(zlac_get_right_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+        return ZLAC_ERR_INVALID_STATE;
+    }
+		
     uint8_t data[8];
 
     // 1. 通过 PDO 发送目标位置（RPDO1 已映射 607A:01 和 607A:02）
@@ -938,8 +1058,31 @@ static rt_err_t zlac_set_position_rel(int32_t left_delta, int32_t right_delta)
 				uint16_t left,right;
 			ret = zlac_get_brake(&left,&right);
    if (ret != RT_EOK) return ret;
-		if(left || right) return RT_ERROR;
-    uint8_t data[8];
+		if(left || right) return ZLAC_ERR_BRAKE_UNRELEASE;
+
+		if (!s_online) {
+				return -ZLAC_ERR_OFFLINE;
+		}
+	
+    // 应用右电机方向反转
+    if (s_right_motor_reverse) {
+        right_delta = -right_delta;
+    }
+
+					// 模式未就绪
+	  if (!s_position_mode_ready) {
+        return -ZLAC_ERR_MODE_UNREADY;  // 或自定义错误码
+    }
+
+	 // 检查驱动器是否处于使能状态（状态字低4位 = 0x07 且 bit5=1？实际标准为 Operation enabled = 0x27）
+    if (zlac_get_state(zlac_get_left_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+        return ZLAC_ERR_INVALID_STATE;
+    }
+		if (zlac_get_state(zlac_get_right_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
+        return ZLAC_ERR_INVALID_STATE;
+    }		
+		
+		uint8_t data[8];
 
     // 1. 发送增量位置（RPDO1 同样使用 607A:01/02，但控制字 bit4=1 表示相对）
     data[0] = left_delta & 0xFF;
@@ -972,26 +1115,7 @@ rt_err_t zlac_set_position(int32_t left_pulses, int32_t right_pulses, rt_bool_t 
 	}
 }
 rt_err_t zlac_set_position_by_mode(int32_t left_pulses, int32_t right_pulses)
-{
-			// 模式未就绪
-	  if (!s_position_mode_ready) {
-        return -ZLAC_ERR_MODE_UNREADY;  // 或自定义错误码
-    }
-			// 检测刹车是否释放
-	    rt_err_t ret;
-				uint16_t left,right;
-			ret = zlac_get_brake(&left,&right);
-   if (ret != RT_EOK) return ret;
-		if(left || right) return ZLAC_ERR_BRAKE_UNRELEASE;
-
-	 // 检查驱动器是否处于使能状态（状态字低4位 = 0x07 且 bit5=1？实际标准为 Operation enabled = 0x27）
-    if (zlac_get_state(zlac_get_left_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
-        return ZLAC_ERR_INVALID_STATE;
-    }
-		if (zlac_get_state(zlac_get_right_statusword()) != ZLAC_STATE_OPERATION_ENABLED) {
-        return ZLAC_ERR_INVALID_STATE;
-    }
-		
+{		
     if (s_position_mode == ZLAC_POS_MODE_ABSOLUTE) {
         return zlac_set_position_abs(left_pulses, right_pulses);
     } else {
@@ -1036,6 +1160,9 @@ rt_err_t zlac_brake_release(void)
     uint8_t data[2] = {0, 0};  // 0: 开启抱闸 (释放)
     rt_err_t ret = zlac_sdo_write(ZLAC_OD_BRAKE_CONFIG, 7, data, 2);
     if (ret == RT_EOK) ret = zlac_sdo_write(ZLAC_OD_BRAKE_CONFIG, 8, data, 2);
+    if (ret == RT_EOK) {
+        s_brake_released = RT_TRUE;
+    }		
     return ret;
 }
 rt_err_t zlac_brake_engage(void)   
@@ -1045,6 +1172,7 @@ rt_err_t zlac_brake_engage(void)
     if (ret == RT_EOK) ret = zlac_sdo_write(ZLAC_OD_BRAKE_CONFIG, 8, data, 2);
 	// 注意： 电机开启刹车，表示已经工作结束						
 		if(ret == RT_EOK){
+			s_brake_released = RT_FALSE;
 			s_velocity_mode_ready = RT_FALSE;
 			s_position_mode_ready = RT_FALSE;
 		}
@@ -1120,7 +1248,7 @@ static rt_err_t zlac_set_accel_time(uint32_t left_ms, uint32_t right_ms)
 {
     return set_left_right_param32(ZLAC_OD_PROFILE_ACCEL, left_ms, right_ms);
 }
-static rt_err_t zlac_get_accel_time(uint32_t *left_ms, uint32_t *right_ms)
+rt_err_t zlac_get_accel_time(uint32_t *left_ms, uint32_t *right_ms)
 {
     return get_left_right_param32(ZLAC_OD_PROFILE_ACCEL, left_ms, right_ms);
 }
@@ -1130,7 +1258,7 @@ static rt_err_t zlac_set_decel_time(uint32_t left_ms, uint32_t right_ms)
 {
     return set_left_right_param32(ZLAC_OD_PROFILE_DECEL, left_ms, right_ms);	
 }
-static rt_err_t zlac_get_decel_time(uint32_t *left_ms, uint32_t *right_ms)
+rt_err_t zlac_get_decel_time(uint32_t *left_ms, uint32_t *right_ms)
 {
     return get_left_right_param32(ZLAC_OD_PROFILE_DECEL, left_ms, right_ms);
 }
@@ -1158,7 +1286,7 @@ static rt_err_t zlac_set_encoder_lines(uint16_t left_lines, uint16_t right_lines
 {
     return set_left_right_param(ZLAC_OD_ENCODER_LINES, left_lines, right_lines);	
 }
-static rt_err_t zlac_get_encoder_lines(uint16_t *left, uint16_t *right)
+rt_err_t zlac_get_encoder_lines(uint16_t *left, uint16_t *right)
 {
     return get_left_right_param(ZLAC_OD_ENCODER_LINES, left, right);
 }
@@ -1187,7 +1315,7 @@ static rt_err_t zlac_get_current_limits(uint16_t *left, uint16_t *right)
 {
     return get_left_right_param(ZLAC_OD_RATED_CURRENT, left, right);
 }
-static rt_err_t zlac_get_current_peak(uint16_t *left, uint16_t *right)
+rt_err_t zlac_get_current_peak(uint16_t *left, uint16_t *right)
 {
     return get_left_right_param(ZLAC_OD_MAX_CURRENT, left, right);
 }
@@ -1197,7 +1325,7 @@ static rt_err_t zlac_set_max_speed(uint16_t rpm)
     uint8_t data[2] = {rpm & 0xFF, (rpm >> 8) & 0xFF};
     return zlac_sdo_write(ZLAC_OD_MAX_SPEED, 0, data, 2);
 }
-static uint16_t zlac_get_max_speed(void)
+uint16_t zlac_get_max_speed(void)
 {
     uint8_t data[2];
     if (zlac_sdo_read(ZLAC_OD_MAX_SPEED, 0, data, 2) == RT_EOK)
@@ -1237,15 +1365,15 @@ static rt_err_t zlac_set_velocity_kf(uint16_t left_kf, uint16_t right_kf)
 {
     return set_left_right_param(ZLAC_OD_VEL_KF, left_kf, right_kf);	
 }
-static rt_err_t zlac_get_velocity_pid_kp(uint16_t *left_kp, uint16_t *right_kp)
+rt_err_t zlac_get_velocity_pid_kp(uint16_t *left_kp, uint16_t *right_kp)
 {
     return get_left_right_param(ZLAC_OD_VEL_KP, left_kp, right_kp);
 }
-static rt_err_t zlac_get_velocity_pid_ki(uint16_t *left_ki, uint16_t *right_ki)
+rt_err_t zlac_get_velocity_pid_ki(uint16_t *left_ki, uint16_t *right_ki)
 {
     return get_left_right_param(ZLAC_OD_VEL_KI, left_ki, right_ki);
 }
-static rt_err_t zlac_get_velocity_pid_kf(uint16_t *left_kf, uint16_t *right_kf)
+rt_err_t zlac_get_velocity_pid_kf(uint16_t *left_kf, uint16_t *right_kf)
 {
     return get_left_right_param(ZLAC_OD_VEL_KF, left_kf, right_kf);
 }
@@ -1256,7 +1384,7 @@ static rt_err_t zlac_set_position_kp(uint16_t left_kp, uint16_t right_kp)
 {
     return set_left_right_param(ZLAC_OD_POS_KP, left_kp, right_kp);
 }
-static rt_err_t zlac_get_position_kp(uint16_t *left_kp, uint16_t *right_kp)
+rt_err_t zlac_get_position_kp(uint16_t *left_kp, uint16_t *right_kp)
 {
     return get_left_right_param(ZLAC_OD_POS_KP, left_kp, right_kp);
 }
@@ -1266,7 +1394,7 @@ static rt_err_t zlac_set_position_kf(uint16_t left_kf, uint16_t right_kf)
 {
     return set_left_right_param(ZLAC_OD_POS_KF, left_kf, right_kf);
 }
-static rt_err_t zlac_get_position_kf(uint16_t *left_kf, uint16_t *right_kf)
+rt_err_t zlac_get_position_kf(uint16_t *left_kf, uint16_t *right_kf)
 {
     return get_left_right_param(ZLAC_OD_POS_KF, left_kf, right_kf);
 }
@@ -1276,7 +1404,7 @@ static rt_err_t zlac_set_vel_smooth(uint16_t left_smooth, uint16_t right_smooth)
 {
     return set_left_right_param(ZLAC_OD_VEL_SMOOTH, left_smooth, right_smooth);
 }
-static rt_err_t zlac_get_vel_smooth(uint16_t *left_smooth, uint16_t *right_smooth)
+rt_err_t zlac_get_vel_smooth(uint16_t *left_smooth, uint16_t *right_smooth)
 {
     return get_left_right_param(ZLAC_OD_VEL_SMOOTH, left_smooth, right_smooth);
 }
@@ -1286,7 +1414,7 @@ static rt_err_t zlac_set_ff_smooth(uint16_t left_smooth, uint16_t right_smooth)
 {
     return set_left_right_param(ZLAC_OD_FEEDFORWARD_SMOOTH, left_smooth, right_smooth);
 }
-static rt_err_t zlac_get_ff_smooth(uint16_t *left_smooth, uint16_t *right_smooth)
+rt_err_t zlac_get_ff_smooth(uint16_t *left_smooth, uint16_t *right_smooth)
 {
     return get_left_right_param(ZLAC_OD_FEEDFORWARD_SMOOTH, left_smooth, right_smooth);
 }
@@ -1329,7 +1457,7 @@ static rt_err_t zlac_set_motor_poles(uint16_t left_poles, uint16_t right_poles)
 {
     return set_left_right_param(ZLAC_OD_MOTOR_POLES, left_poles, right_poles);
 }
-static rt_err_t zlac_get_motor_poles(uint16_t *left_poles, uint16_t *right_poles)
+rt_err_t zlac_get_motor_poles(uint16_t *left_poles, uint16_t *right_poles)
 {
     return get_left_right_param(ZLAC_OD_MOTOR_POLES, left_poles, right_poles);
 }
@@ -1351,7 +1479,7 @@ static rt_err_t zlac_set_init_direction(uint16_t direction)
     uint8_t data[2] = {direction & 0xFF, (direction >> 8) & 0xFF};
     return zlac_sdo_write(ZLAC_OD_EMERGENCY_STOP, 7, data, 2);
 }
-static uint16_t zlac_get_init_direction(void)
+uint16_t zlac_get_init_direction(void)
 {
     uint8_t data[2];
     if (zlac_sdo_read(ZLAC_OD_EMERGENCY_STOP, 7, data, 2) == RT_EOK)
@@ -1455,9 +1583,9 @@ static rt_err_t zlac_motor_config_default(void)
     if (ret != RT_EOK) return ret;
     ret = zlac_set_max_speed(ZLAC_MOTOR_MAX_RPM);
     if (ret != RT_EOK) return ret;
-    ret = zlac_set_accel_time(ZLAC_MOTOR_ACCEL_TIME_MS,ZLAC_MOTOR_ACCEL_TIME_MS);
+    ret = zlac_set_accel_time(ZLAC_MOTOR_V_ACCEL_TIME_MS,ZLAC_MOTOR_V_ACCEL_TIME_MS);
     if (ret != RT_EOK) return ret;
-    ret = zlac_set_decel_time(ZLAC_MOTOR_DECEL_TIME_MS,ZLAC_MOTOR_DECEL_TIME_MS);
+    ret = zlac_set_decel_time(ZLAC_MOTOR_V_DECEL_TIME_MS,ZLAC_MOTOR_V_DECEL_TIME_MS);
     if (ret != RT_EOK) return ret;
     ret = zlac_set_quick_stop_time(ZLAC_MOTOR_QUICKSTOP_TIME_MS,ZLAC_MOTOR_QUICKSTOP_TIME_MS);
     if (ret != RT_EOK) return ret;	
@@ -1527,7 +1655,7 @@ static void zlac_check_default_config(void)
 
     // 加速时间 (注意：zlac_get_accel_time 返回 uint32_t 类型)
     if (zlac_get_accel_time(&accel_left, &accel_right) == RT_EOK) {
-        if (accel_left != ZLAC_MOTOR_ACCEL_TIME_MS || accel_right != ZLAC_MOTOR_ACCEL_TIME_MS) {
+        if (accel_left != ZLAC_MOTOR_V_ACCEL_TIME_MS || accel_right != ZLAC_MOTOR_V_ACCEL_TIME_MS) {
             rt_kprintf("[WARN] Accel time mismatch: current L=%d ms R=%d ms, expected %d ms\n",
                        accel_left, accel_right, ZLAC_MOTOR_ACCEL_TIME_MS);
             mismatch++;
@@ -1536,7 +1664,7 @@ static void zlac_check_default_config(void)
 
     // 减速时间
     if (zlac_get_decel_time(&decel_left, &decel_right) == RT_EOK) {
-        if (decel_left != ZLAC_MOTOR_DECEL_TIME_MS || decel_right != ZLAC_MOTOR_DECEL_TIME_MS) {
+        if (decel_left != ZLAC_MOTOR_V_DECEL_TIME_MS || decel_right != ZLAC_MOTOR_V_DECEL_TIME_MS) {
             rt_kprintf("[WARN] Decel time mismatch: current L=%d ms R=%d ms, expected %d ms\n",
                        decel_left, decel_right, ZLAC_MOTOR_DECEL_TIME_MS);
             mismatch++;
@@ -1595,21 +1723,86 @@ uint16_t zlac_get_bus_voltage(void)
 }
 
 /* ======================== 心跳监测 ======================== */
+// 自动恢复通讯
+static void zlac_recover_communication(void)
+{
+    rt_kprintf("[ZLAC] Attempting to recover communication...\n");
+    // 1. NMT 复位通讯
+    zlac_nmt_reset_communication();
+    rt_thread_mdelay(200);
+    // 2. 重新启动节点
+    zlac_nmt_start();
+    rt_thread_mdelay(50);
+    // 3. 根据当前模式重新初始化
+		if (s_velocity_mode_ready) {
+        // 仅配置 PDO 和参数，不使能
+        zlac_config_pdo_for_velocity_mode();
+        zlac_config_velocity_mode_params(ZLAC_MOTOR_V_ACCEL_TIME_MS, ZLAC_MOTOR_V_DECEL_TIME_MS);
+    } else if (s_position_mode_ready) {
+        zlac_config_pdo_for_position_mode();
+        zlac_config_position_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS, ZLAC_MOTOR_NORMAL_RPM);
+    } else {
+        // 默认配置速度模式 PDO
+        zlac_config_pdo_for_velocity_mode();
+        zlac_config_velocity_mode_params(ZLAC_MOTOR_V_ACCEL_TIME_MS, ZLAC_MOTOR_V_DECEL_TIME_MS);
+    }
+    // 4. 重新使能
+//    zlac_control_enable();
+    rt_kprintf("[ZLAC] Recovery completed.\n");
+}
+
 void zlac_check_heartbeat(void)
 {
-    if (s_last_hb_tick == 0) return;
-    uint32_t now = rt_tick_get_millisecond();
-    if (now - s_last_hb_tick > ZLAC_HEARTBEAT_TIMEOUT_MS) {
-        if (s_online) {
-            rt_kprintf("[ZLAC] Heartbeat timeout!\n");
-            s_online = RT_FALSE;
-					// 上传离线信号
+	static uint32_t last_probe = 0;
+	    uint32_t now = rt_tick_get_millisecond();
+//    if (s_last_hb_tick == 0) return;
+//    if (now - s_last_hb_tick > ZLAC_HEARTBEAT_TIMEOUT_MS) {
+//        if (s_online) {
+//            rt_kprintf("[ZLAC] Heartbeat timeout!\n");
+//            s_online = RT_FALSE;
+//					// 上传离线信号
+//        }
+//    } else {
+//        if (!s_online) {
+//            rt_kprintf("[ZLAC] Online again.\n");
+//            s_online = RT_TRUE;
+//					// 上传恢复上线信号
+//        }
+//    }
+		   // 主动探测：每 10 秒读取一次错误寄存器 判断通讯是否正常
+
+    if (now - last_probe >= 10000) {
+        last_probe = now;
+        uint8_t err_reg;
+        if (zlac_sdo_read(0x1001, 0, &err_reg, 1) == RT_EOK) {
+            s_fail_count = 0;
+            if (!s_online) {
+                rt_kprintf("[ZLAC] Communication restored.\n");
+                s_online = RT_TRUE;
+            }
+        } else {
+            s_fail_count++;
+            if (s_fail_count >= 3 && s_online) {
+                rt_kprintf("[ZLAC] Communication lost (probe failed).\n");
+                s_online = RT_FALSE;
+                // 尝试恢复，限制频率
+                if (now - s_last_recovery_tick > 10000) {
+                    s_last_recovery_tick = now;
+                    zlac_recover_communication();
+                }
+            }
         }
-    } else {
-        if (!s_online) {
-            rt_kprintf("[ZLAC] Online again.\n");
-            s_online = RT_TRUE;
-					// 上传恢复上线信号
+    }
+    
+    // 可选：保留原有心跳检测（如果驱动器能正常发送心跳）
+    if (s_last_hb_tick != 0) {
+        if (now - s_last_hb_tick > ZLAC_HEARTBEAT_TIMEOUT_MS && s_online) {
+            rt_kprintf("[ZLAC] Heartbeat timeout.\n");
+            s_online = RT_FALSE;
+            if (now - s_last_recovery_tick > 10000) {
+                s_last_recovery_tick = now;
+                zlac_recover_communication();
+            }
         }
     }
 }
@@ -1674,16 +1867,26 @@ static void can_rx_thread_entry(void *param)
                 }
                 continue;
             }
-            // TPDO1 处理
-            if (id == ZLAC_COBID_TPDO1(ZLAC_NODE_ID)) {						
-                if (s_current_mode == ZLAC_MODE_PROFILE_VELOCITY && len >= 4) {																	
-                    s_actual_vel_left = (int16_t)(d[0] | (d[1]<<8));
-                    s_actual_vel_right = (int16_t)(d[2] | (d[3]<<8));
-                } else if (s_current_mode == ZLAC_MODE_PROFILE_POSITION && len >= 8) {
-                    s_actual_pos_left = (int32_t)(d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24));
-                    s_actual_pos_right = (int32_t)(d[4] | (d[5]<<8) | (d[6]<<16) | (d[7]<<24));
-                }
-            }
+            // TPDO1 处理 位置模式和速度模式
+//            if (id == ZLAC_COBID_TPDO1(ZLAC_NODE_ID)) {						
+//                if (s_current_mode == ZLAC_MODE_PROFILE_VELOCITY && len == 4) {																	
+//                    s_actual_vel_left = (int16_t)(d[0] | (d[1]<<8));
+//                    s_actual_vel_right = (int16_t)(d[2] | (d[3]<<8));
+//                } else if (s_current_mode == ZLAC_MODE_PROFILE_POSITION && len == 8) {
+//                    s_actual_pos_left = (int32_t)(d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24));
+//                    s_actual_pos_right = (int32_t)(d[4] | (d[5]<<8) | (d[6]<<16) | (d[7]<<24));
+//                }
+//            }
+							// 分开处理 TPDO1 速度模式  TPDO2 位置模式   len的判断可增加错误数据的简单过滤
+							if (id == ZLAC_COBID_TPDO1(ZLAC_NODE_ID) && len == 4) {
+									// 速度反馈（4字节）
+									s_actual_vel_left = (int16_t)(d[0] | (d[1]<<8));
+									s_actual_vel_right = (int16_t)(d[2] | (d[3]<<8));
+							} else if (id == ZLAC_COBID_TPDO2(ZLAC_NODE_ID) && len == 8) {
+									// 位置反馈（8字节）
+									s_actual_pos_left = (int32_t)(d[0] | (d[1]<<8) | (d[2]<<16) | (d[3]<<24));
+									s_actual_pos_right = (int32_t)(d[4] | (d[5]<<8) | (d[6]<<16) | (d[7]<<24));
+							}					
         }
     }
 }
@@ -1741,7 +1944,21 @@ rt_err_t zlac_motor_init(void)
 		zlac_brake_engage();   // 抱闸
 		uint16_t left,right;
 		zlac_get_brake(&left,&right);
-		rt_kprintf("Brake: B0=%s, B1=%s\n", left ? "engage":"release" , right ? "engage":"release");			
+		rt_kprintf("Brake: B0=%s, B1=%s\n", left ? "engage":"release" , right ? "engage":"release");		
+    ret = nmt_send(0x80, ZLAC_NODE_ID);   // 进入预操作状态
+    if (ret == RT_EOK) {
+        rt_thread_mdelay(50);
+        ret = config_tpdo2_for_position();
+        if (ret == RT_EOK) {
+            ret = nmt_send(0x01, ZLAC_NODE_ID);   // 重启节点
+            rt_thread_mdelay(50);
+            rt_kprintf("[ZLAC] TPDO2 configured for position feedback\n");
+        } else {
+            rt_kprintf("[ZLAC] TPDO2 configuration failed\n");
+        }
+    } else {
+        rt_kprintf("[ZLAC] Failed to enter pre-operational state for TPDO2 config\n");
+    }
 		rt_kprintf("[ZLAC] Driver init OK\n");
     return RT_EOK;
 }
@@ -1797,6 +2014,7 @@ static void zlac_msh_test(int argc, char **argv)
         rt_kprintf("  zlac_test enable          - enable motor\n");
         rt_kprintf("  zlac_test disable         - stop motor but lock\n");
         rt_kprintf("  zlac_test free            - Motor free (no torque)\n");
+				rt_kprintf("  zlac_test quickstop        - emergency quick stop\n");
 				rt_kprintf("  zlac_test brake on/off    - engage/release brake\n");
 				rt_kprintf("  zlac_test sdo_vel         - read actual velocity via SDO (for debugging)\n");
         rt_kprintf("  zlac_test speed L R       - set speed (rpm)\n");
@@ -1811,7 +2029,9 @@ static void zlac_msh_test(int argc, char **argv)
 /*速度模式： brake off / mode vel / speed 10 10 /disable/enable/speed -10 -10/free / brake on*/
 /*绝对位置模式： brake off / mode abs_pos / home/ pos 1000 1000 /disable/enable/pos -1000 -1000 /free / brake on*/	
 /*相对位置模式： brake off / mode rel_pos / pos 1000 1000 /disable/enable/pos -1000 -1000 /free / brake on*/			
-/*电机一圈脉冲数：4096*4*/
+/*电机一圈脉冲数：4096*4 = 16384 脉冲/圈    电机直径 173 mm → 周长 ≈ 0.5435 m*/
+/*每个脉冲对应的位移 = 543.5 mm / 16384 ≈ 0.03317 mm 或者 每毫米需要的脉冲数 = 16384 / 543.5 ≈ 30.15 脉冲/mm*/
+//一圈值		zlac_test pos 16384 16384
 		if (rt_strcmp(argv[1], "rev") == 0) {
 				if (argc < 3) {
 						rt_kprintf("Usage: zlac_test rev on/off\n");
@@ -1852,6 +2072,9 @@ static void zlac_msh_test(int argc, char **argv)
     } else if (rt_strcmp(argv[1], "free") == 0) {
 				ret = zlac_control_free();
 				rt_kprintf("Motor free (no torque), ret = %d\n", ret);
+		}else if (rt_strcmp(argv[1], "quickstop") == 0) {
+			ret = zlac_control_quickstop();
+			rt_kprintf("Quick stop executed, ret=%d\n", ret);
 		} else if (rt_strcmp(argv[1], "brake") == 0) {
         if (argc < 3) return;
         if (rt_strcmp(argv[2], "on") == 0){   //刹车
@@ -1934,6 +2157,9 @@ static void zlac_msh_test(int argc, char **argv)
 		    int32_t left = atoi(argv[2]);
         int32_t right = atoi(argv[3]);
 				ret = zlac_set_position_by_mode(left,right);
+				if(ret != RT_EOK){
+					rt_kprintf("Error:%d\n",ret);
+				}
 				if(s_position_mode == ZLAC_POS_MODE_ABSOLUTE){
 					rt_kprintf("Absolute position set: L=%ld R=%ld pulses\n", left, right);
 				}else{
@@ -1943,21 +2169,36 @@ static void zlac_msh_test(int argc, char **argv)
         if (argc < 3) return;
         if (rt_strcmp(argv[2], "vel") == 0) {
 //            zlac_config_pdo_for_velocity_mode();
-//					  zlac_config_velocity_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS);
-						zlac_init_velocity_mode();
-            rt_kprintf("Set velocity mode and configured PDO\n");
+//					  zlac_config_velocity_mode_params(ZLAC_MOTOR_V_ACCEL_TIME_MS, ZLAC_MOTOR_V_DECEL_TIME_MS);
+          rt_kprintf("Set velocity mode and configured PDO\n");
+					ret = zlac_init_velocity_mode();
+					if(ret != RT_EOK){
+							rt_kprintf("Error: %d\n",ret);
+					}else{
+							rt_kprintf("Set velocity mode Success\n");
+					}
         } else if (rt_strcmp(argv[2], "abs_pos") == 0) {
 //            zlac_config_pdo_for_position_mode();
 //					  zlac_config_position_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS, ZLAC_MOTOR_MAX_RPM);
 //							zlac_set_position_mode(ZLAC_POS_MODE_ABSOLUTE);
-							zlac_init_position_mode(ZLAC_POS_MODE_ABSOLUTE);										
-            rt_kprintf("Set Absolute position mode and configured PDO\n");
+          rt_kprintf("Set Absolute position mode and configured PDO\n");
+					ret = zlac_init_position_mode(ZLAC_POS_MODE_ABSOLUTE);
+					if(ret != RT_EOK){
+							rt_kprintf("Error: %d\n",ret);
+					}else{
+							rt_kprintf("Set Absolute position  mode Success\n");
+					}
         } else if (rt_strcmp(argv[2], "rel_pos") == 0) {
 //            zlac_config_pdo_for_position_mode();
 //					  zlac_config_position_mode_params(ZLAC_MOTOR_ACCEL_TIME_MS, ZLAC_MOTOR_DECEL_TIME_MS, ZLAC_MOTOR_MAX_RPM);
 //							zlac_set_position_mode(ZLAC_POS_MODE_RELATIVE);
-							zlac_init_position_mode(ZLAC_POS_MODE_RELATIVE);		
-							rt_kprintf("Set Relative position mode and configured PDO\n");					
+					rt_kprintf("Set Relative position mode and configured PDO\n");	
+					ret = zlac_init_position_mode(ZLAC_POS_MODE_RELATIVE);		
+					if(ret != RT_EOK){
+							rt_kprintf("Error: %d\n",ret);
+					}else{
+							rt_kprintf("Set Relative position  mode Success\n");
+					}				
 				} else {
             rt_kprintf("Invalid mode. Use 'vel' or 'abs_pos' or 'rel_pos'.\n");
         }
@@ -2215,7 +2456,7 @@ static void zlac_show_pid(void)
     // 电流环 Ki
     if (get_left_right_param(ZLAC_OD_CUR_KI, &left, &right) == RT_EOK)
         rt_kprintf("Current Ki: L=%d, R=%d\n", left, right);
-    // 速度平滑系数 (已在配置中显示，此处也可显示)
+    // 速度平滑系数 
     if (zlac_get_vel_smooth(&left, &right) == RT_EOK)
         rt_kprintf("Vel smooth: L=%d, R=%d\n", left, right);
     // 前馈平滑系数
@@ -2224,7 +2465,7 @@ static void zlac_show_pid(void)
     // 转矩平滑系数 (201Ch)
     if (get_left_right_param(ZLAC_OD_TORQUE_SMOOTH, &left, &right) == RT_EOK)
         rt_kprintf("Torque smooth: L=%d, R=%d\n", left, right);
-    // 速度平滑系数 (已显示)
+ 
     rt_kprintf("==============================================\n");
 }
 MSH_CMD_EXPORT(zlac_show_pid, "Show ZLAC8015D PID and smoothing parameters");
@@ -2382,7 +2623,7 @@ static void show_monitor_once(void)
     rt_kprintf("================================================\n");
 }
 
-static void monitor_print_thread_entry(void *param)
+static void zlac_monitor_print_thread_entry(void *param)
 {
     while (s_monitor_print_run) {
         show_monitor_once();
@@ -2401,11 +2642,11 @@ static void zlac_show_monitor(int argc, char **argv)
                 return;
             }
             s_monitor_print_run = RT_TRUE;
-            s_monitor_print_thread = rt_thread_create("monitor_print",
-                                                      monitor_print_thread_entry,
+            s_monitor_print_thread = rt_thread_create("zlac_monitor_print",
+                                                      zlac_monitor_print_thread_entry,
                                                       RT_NULL,
                                                       2048,
-                                                      20,
+                                                      25,
                                                       10);
             if (s_monitor_print_thread != RT_NULL) {
                 rt_thread_startup(s_monitor_print_thread);
@@ -2431,6 +2672,13 @@ static void zlac_show_monitor(int argc, char **argv)
     }
 }
 MSH_CMD_EXPORT(zlac_show_monitor, "Show ZLAC8015D real-time monitoring data");
+
+static void zlac_test_recover(int argc, char **argv)
+{
+    zlac_recover_communication();
+    rt_kprintf("Communication recovered. Please re-enable or adjust state manually.\n");
+}
+MSH_CMD_EXPORT(zlac_test_recover, "recover CAN communication without changing motor state");
 
 #endif /* RT_USING_MSH */
 

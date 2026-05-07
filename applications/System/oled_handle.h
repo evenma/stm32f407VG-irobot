@@ -35,17 +35,26 @@ typedef enum
 {
     PAGE_BOOT = 0,          // Boot page - displayed at startup
     PAGE_HOME,              // Home page - default display
-    PAGE_PID_TUNING,        // PID tuning page
-    PAGE_ULTRASONIC,        // Ultrasonic sensor data page
+
+		PAGE_BATTERY_INFO,      // Battery level info page
+		PAGE_IMU_DATA,          // IMU attitude data page
+		PAGE_ULTRASONIC,        // Ultrasonic sensor data page
     PAGE_IR_SENSOR,         // IR sensor data page
-    PAGE_BATTERY_INFO,      // Battery level info page
-    PAGE_WATER_LEVEL,       // Water level info page
-    PAGE_MOTOR_STATUS,      // Motor status page
-    PAGE_IMU_DATA,          // IMU attitude data page
-    PAGE_FAULT_LOG,         // Fault log page
+
+		PAGE_WATER_LEVEL,       // Water level info page
+
+    /* ZLAC8015D 电机相关页面 */
+    PAGE_ZLAC_CONFIG,        // 设置参数    
+		PAGE_ZLAC_MONITOR1,      // 实时动态数据 1/2
+    PAGE_ZLAC_MONITOR2,      // 实时动态数据 2/2
+    PAGE_ZLAC_VEL_PID,       // 速度环 PID
+    PAGE_ZLAC_POS_PID,       // 位置环 PID+ 平滑系数
+    PAGE_ZLAC_MOTOR_PARAM,   // 电机基本参数
+	
+	  PAGE_FAULT_LOG,         // Fault log page
     PAGE_SETTINGS,          // System settings page
-    
-    PAGE_COUNT              // Total pages (11 pages)
+		PAGE_UART_DATA,   			// 显示上位机发送的数据
+    PAGE_COUNT              // Total pages (pages)
 } OledPageId_t;
 
 
@@ -248,5 +257,6 @@ extern void oled_status(int argc, char *argv[]);
  */
 extern void oled_cycle(int argc, char *argv[]);
 
+void oled_set_uart_line(uint8_t line, const char* text);
 
 #endif /* SYSTEM_OLED_HANDLE_H__ */

@@ -23,8 +23,11 @@
 #define ZLAC_MOTOR_RATED_CURRENT_MA 60        /* 额定电流 6A */
 #define ZLAC_MOTOR_PEAK_CURRENT_MA  180       /* 峰值电流 18A */
 #define ZLAC_MOTOR_MAX_RPM          160         /* 最大转速 (rpm) */
-#define ZLAC_MOTOR_ACCEL_TIME_MS    200         /* 加速时间 (ms) */
-#define ZLAC_MOTOR_DECEL_TIME_MS    200         /* 减速时间 (ms) */
+#define ZLAC_MOTOR_NORMAL_RPM       55         /* 室内运行的最大转速 (rpm) */
+#define ZLAC_MOTOR_V_ACCEL_TIME_MS    10         /* 速度模式加速时间 (ms) */
+#define ZLAC_MOTOR_V_DECEL_TIME_MS    10         /* 速度模式减速时间 (ms) */
+#define ZLAC_MOTOR_ACCEL_TIME_MS    100         /* 位置模式加速时间 (ms) */
+#define ZLAC_MOTOR_DECEL_TIME_MS    100         /* 位置模式减速时间 (ms) */
 #define ZLAC_MOTOR_QUICKSTOP_TIME_MS 20         /* 急停减速时间 (ms) */
 
 /* ======================== CANopen 对象字典索引 ======================== */
@@ -181,31 +184,31 @@ static rt_err_t zlac_motor_config_default(void);           /* 根据电机参数
 static rt_err_t zlac_save_parameters(void);                /* 保存所有 RW 参数到 EEPROM */
 /* ======================== 位置环 PID 配置 ======================== */
 static rt_err_t zlac_set_position_kp(uint16_t left_kp, uint16_t right_kp);
-static rt_err_t zlac_get_position_kp(uint16_t *left_kp, uint16_t *right_kp);
+rt_err_t zlac_get_position_kp(uint16_t *left_kp, uint16_t *right_kp);
 static rt_err_t zlac_set_position_kf(uint16_t left_kf, uint16_t right_kf);
-static rt_err_t zlac_get_position_kf(uint16_t *left_kf, uint16_t *right_kf);
+rt_err_t zlac_get_position_kf(uint16_t *left_kf, uint16_t *right_kf);
 
 /* ======================== 平滑系数配置 ======================== */
 static rt_err_t zlac_set_vel_smooth(uint16_t left_smooth, uint16_t right_smooth);
-static rt_err_t zlac_get_vel_smooth(uint16_t *left_smooth, uint16_t *right_smooth);
+rt_err_t zlac_get_vel_smooth(uint16_t *left_smooth, uint16_t *right_smooth);
 static rt_err_t zlac_set_feedforward_smooth(uint16_t left_smooth, uint16_t right_smooth);
-static rt_err_t zlac_get_feedforward_smooth(uint16_t *left_smooth, uint16_t *right_smooth);
+rt_err_t zlac_get_feedforward_smooth(uint16_t *left_smooth, uint16_t *right_smooth);
 /* ======================== 电机基本参数 ======================== */
 static rt_err_t zlac_set_motor_poles(uint16_t left_poles, uint16_t right_poles);
-static rt_err_t zlac_get_motor_poles(uint16_t *left_poles, uint16_t *right_poles);
+rt_err_t zlac_get_motor_poles(uint16_t *left_poles, uint16_t *right_poles);
 static rt_err_t zlac_set_start_speed(uint16_t left_rpm, uint16_t right_rpm);
 static rt_err_t zlac_get_start_speed(uint16_t *left_rpm, uint16_t *right_rpm);
 static rt_err_t zlac_set_overload_factor(uint16_t left_factor, uint16_t right_factor);
 static rt_err_t zlac_get_overload_factor(uint16_t *left_factor, uint16_t *right_factor);
 static rt_err_t zlac_set_temp_threshold(uint16_t left_motor_c, uint16_t right_motor_c, uint16_t driver_c);
-static rt_err_t zlac_get_temp_threshold(uint16_t *left_motor_c, uint16_t *right_motor_c, uint16_t *driver_c);
+rt_err_t zlac_get_temp_threshold(uint16_t *left_motor_c, uint16_t *right_motor_c, uint16_t *driver_c);
 /* ======================== 电机方向 ======================== */
 static rt_err_t zlac_set_init_direction(uint16_t direction);   // 0:CW, 1:CCW
-static uint16_t zlac_get_init_direction(void);
+uint16_t zlac_get_init_direction(void);
 
 /* 工作模式设置 */
 static rt_err_t zlac_set_op_mode(ZlacOpMode_t mode);
-static ZlacOpMode_t zlac_get_op_mode(void);
+ZlacOpMode_t zlac_get_op_mode(void);
 /* 位置控制 (使用 PDO) */
 static rt_err_t zlac_set_position(int32_t left_pulses, int32_t right_pulses, rt_bool_t relative);
 /* ======================== 通讯与诊断 ======================== */
@@ -250,6 +253,8 @@ rt_bool_t zlac_is_left_target_reached(void);	/* 查询左右电机是否已到�
 rt_bool_t zlac_is_right_target_reached(void);
 uint16_t zlac_get_motor_status_left(void);	/* 电机运动状态*/
 uint16_t zlac_get_motor_status_right(void);
+/* 刷新状态缓存（由外部定期调用，如 monitor 线程）*/
+void zlac_refresh_status_cache(void);
 
 /* 绝对位置模式，需要设置原点 */
 rt_err_t zlac_set_position_abs_home(void);
@@ -271,6 +276,18 @@ uint16_t zlac_get_bus_voltage(void);                /* 0.01V 单位 */
 
 /* 获取故障码 (32位) */
 uint32_t zlac_get_fault_code(void);                 
-rt_err_t zlac_clear_fault(void);                    /* 清除故障 (同 fault_reset) */
+rt_err_t zlac_clear_fault(void);      
+/* 清除故障 (同 fault_reset) */
+
+/* Oled调用 */
+rt_err_t zlac_get_velocity_pid_kp(uint16_t *left_kp, uint16_t *right_kp);
+rt_err_t zlac_get_velocity_pid_ki(uint16_t *left_ki, uint16_t *right_ki);
+rt_err_t zlac_get_velocity_pid_kf(uint16_t *left_kf, uint16_t *right_kf);
+rt_err_t zlac_get_ff_smooth(uint16_t *left_smooth, uint16_t *right_smooth);
+rt_err_t zlac_get_encoder_lines(uint16_t *left, uint16_t *right);
+rt_err_t zlac_get_current_peak(uint16_t *left, uint16_t *right);
+uint16_t zlac_get_max_speed(void);
+rt_err_t zlac_get_accel_time(uint32_t *left_ms, uint32_t *right_ms);
+rt_err_t zlac_get_decel_time(uint32_t *left_ms, uint32_t *right_ms);
 
 #endif /* __ZLTECH_CAN_MOTOR_H__ */

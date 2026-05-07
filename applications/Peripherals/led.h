@@ -80,6 +80,9 @@ void led_init(void);
  */
 int led_set_color(rt_uint8_t id, LedColorState_t state);
 
+// 定期刷新LED灯
+int led_flush(void);
+
 /**
  * @brief 获取单个 LED 的当前颜色状态
  * @param id LED 编号 (0-7)

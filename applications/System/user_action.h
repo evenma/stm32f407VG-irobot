@@ -89,6 +89,7 @@ void user_action_set_clean_rod_position(uint16_t pos);
 void user_action_clean_rod_inc(void);
 void user_action_clean_rod_dec(void);
 void user_action_toggle_clean_mode(void);
+void cmd_set_pump_duty(int duty);
 /* 获取当前工作状态 */
 const WorkStatus_t* user_action_get_work_status(void);
 void user_action_sewage_pump(void);

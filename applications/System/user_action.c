@@ -519,6 +519,7 @@ static void action_lid_close(void)
 static void action_clean_rod_inc(void)
 {
     if (s_work_status.clean_rear || s_work_status.clean_female) {
+				rt_kprintf("[ACTION]  EVENT_CLEAN_ROD_INC \n");
         rt_event_send(&s_action_evt, EVENT_CLEAN_ROD_INC);
     } else {
         rt_kprintf("[ACTION] No active clean, cannot adjust position\n");
@@ -528,6 +529,7 @@ static void action_clean_rod_inc(void)
 static void action_clean_rod_dec(void)
 {
     if (s_work_status.clean_rear || s_work_status.clean_female) {
+				rt_kprintf("[ACTION]  EVENT_CLEAN_ROD_DEC \n");
         rt_event_send(&s_action_evt, EVENT_CLEAN_ROD_DEC);
     } else {
         rt_kprintf("[ACTION] No active clean, cannot adjust position\n");
@@ -753,7 +755,10 @@ void user_action_send_cmd(ActionCmd_t cmd, uint32_t param)
 
 void user_action_stop(void)
 {
-    user_action_send_cmd(ACTION_STOP, 0);
+//    user_action_send_cmd(ACTION_STOP, 0);
+		rt_event_send(&s_action_evt, EVENT_STOP);
+		rt_kprintf("[CMD] Stop event sent\n");
+	
 }
 
 void user_action_set_clean_rod_position(uint16_t pos)
@@ -763,17 +768,36 @@ void user_action_set_clean_rod_position(uint16_t pos)
 
 void user_action_clean_rod_inc(void)
 {
-    user_action_send_cmd(ACTION_CLEAN_ROD_INC, 0);
+//    user_action_send_cmd(ACTION_CLEAN_ROD_INC, 0);
+		if (s_work_status.clean_rear || s_work_status.clean_female) {
+				rt_event_send(&s_action_evt, EVENT_CLEAN_ROD_INC);
+		} else {
+				rt_kprintf("[ACTION] No active clean, cannot adjust position\n");
+		}		
 }
 
 void user_action_clean_rod_dec(void)
 {
-    user_action_send_cmd(ACTION_CLEAN_ROD_DEC, 0);
+//    user_action_send_cmd(ACTION_CLEAN_ROD_DEC, 0);
+		if (s_work_status.clean_rear || s_work_status.clean_female) {
+				rt_event_send(&s_action_evt, EVENT_CLEAN_ROD_DEC);
+		} else {
+				rt_kprintf("[ACTION] No active clean, cannot adjust position\n");
+		}
 }
 
 void user_action_toggle_clean_mode(void)
 {
-    user_action_send_cmd(ACTION_TOGGLE_CLEAN_MODE, 0);
+//    user_action_send_cmd(ACTION_TOGGLE_CLEAN_MODE, 0);	
+		if (g_action_cfg.clean_mode != CLEAN_MODE_FIXED) {
+				g_action_cfg.clean_mode = CLEAN_MODE_FIXED;
+		}else{
+				g_action_cfg.clean_mode = CLEAN_MODE_MASSAGE;
+		}
+		rt_kprintf("[ACTION] Clean mode switched to %s\n",
+							 g_action_cfg.clean_mode == CLEAN_MODE_FIXED ? "Fixed" : "Massage");	
+			/* 如果清洁正在运行，发送模式切换事件 */
+		rt_event_send(&s_action_evt, EVENT_CLEAN_MODE_SW);
 }
 
 void user_action_sewage_pump(void)
@@ -899,7 +923,7 @@ static void cmd_sewage(void)
 }
 
 /* 命令: toilet set_pump_duty <0-100> */
-static void cmd_set_pump_duty(int duty)
+void cmd_set_pump_duty(int duty)
 {
     if (duty < 0) duty = 0;
     if (duty > 100) duty = 100;

@@ -156,7 +156,7 @@ enum adc1_channel {
 #define OLED_DC_PIN               GET_PIN(B, 14)
 #define OLED_MOSI_PIN             GET_PIN(B, 15)
 // #define OLED_RST_PIN            GET_PIN(A, 0)     // 硬件 reset - 不需要软件控制（已移除）
-
+#define ENABLE_OLED 1                    /* 是否开启OLED显示 */
 
 /* ======================== IMU 姿态传感器配置 ======================== */
 
@@ -190,9 +190,10 @@ enum adc1_channel {
 #define BATTERY_ADC_PIN           GET_PIN(C, 3)
 #define BATTERY_ADC_CHANNEL       ADC1_CH13
 
-#define BATTERY_FULL_VOLTAGE_MV   25200               // 25.2V 锂电池满电
-#define BATTERY_LOW_VOLTAGE_MV    19200               // 19.2V ≈20% 低电量阈值
-#define BATTERY_LOW_ALARM_MV      22000   // 22.0V 低电量报警阈值 为确保移动马桶有足够电量返回充电座，建议将低电量报警阈值设为 22.0V（约60%剩余容量）
+#define BATTERY_FULL_VOLTAGE_MV   25200   // 25.2V 锂电池满电   电压范围**16.8-25.2V** 可持续电流最大30A
+#define BATTERY_NULL_VOLTAGE_MV   16800   //  16.8v ≈0% 彻底没电了
+#define BATTERY_LOW_VOLTAGE_MV    19200   // 19.2V ≈20% 低电量阈值 自动停车包含锂电池
+#define BATTERY_LOW_ALARM_MV      22000   // 22.0V （约60%剩余容量）低电量报警阈值 为确保移动马桶有足够电量返回充电座，建议将低电量报警阈值设为 22.0V
 #define BATTERY_LOW_HYSTERESIS_MV   100   // 退出阈值比进入阈值高 100mV
 /* ======================== 充电口检测配置 ======================== */
 

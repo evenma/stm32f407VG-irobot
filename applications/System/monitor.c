@@ -71,6 +71,7 @@ static rt_bool_t s_low_battery_alarmed = RT_FALSE;
 static rt_uint32_t s_alarm_count = 0;
 static rt_tick_t s_last_alarm_tick = 0;
 static rt_bool_t s_last_low_battery = RT_FALSE;
+static uint16_t battery_min_limit = BATTERY_LOW_VOLTAGE_MV; /* 低压报警值 */
 
 // 添加静态变量存储功率（毫瓦）
 static rt_uint32_t s_charge_power_mw = 0;
@@ -249,6 +250,7 @@ static void adc_read_all_channels(rt_uint32_t *battery_raw,
 static void monitor_thread_entry(void *parameter)
 {
 	  uint32_t hb_check_counter = 0;   // 心跳检查计数器（每50ms加1，达到10次即500ms检查一次）
+		uint32_t led_counter = 0;   // led灯刷新 20*60*60=72000 1小时刷新一次
     rt_uint32_t battery_raw, charger_raw, heater_raw, charger_sample_raw, vrefint_raw;
     rt_uint32_t filtered_battery, filtered_charger, filtered_heater, filtered_charger_sample, filtered_vrefint;
 		int32_t effective_diff = 0;
@@ -311,7 +313,7 @@ static void monitor_thread_entry(void *parameter)
 						}
 						
 					  // 低电量报警
-						if (s_battery_mv <= BATTERY_LOW_ALARM_MV) {
+						if (s_battery_mv <= BATTERY_LOW_ALARM_MV || s_battery_mv < battery_min_limit) {
 							    if (!s_last_low_battery) {
 											led_set_battery_low(RT_TRUE);
 											s_last_low_battery = RT_TRUE;
@@ -425,8 +427,40 @@ static void monitor_thread_entry(void *parameter)
 				if (hb_check_counter >= 10) {  
 						hb_check_counter = 0;
 						zlac_check_heartbeat(); 
+						zlac_refresh_status_cache();// 同时刷新电机状态缓存									
 				}
+				hb_check_counter++;
+				
+				if(led_counter >= 12000){   // 10分钟
+					led_counter = 0;
+					led_flush();	// led指示灯容易受到干扰，定期重新刷新	
+				}
+				led_counter++;
+				
+//				show_monitor_once();
+//		if (!s_motor_obj.initialized)
+//    {
+//        return -RT_ERROR;
+//    }
 
+//    result = canopen_motor_read_status();
+//    if (result != RT_EOK) return result;
+
+//    result = canopen_motor_read_velocity();
+//    if (result != RT_EOK) return result;
+
+//    s_service_divider++;
+//    if ((s_service_divider % 10U) == 0U)
+//    {
+//        canopen_motor_read_fault();
+//        canopen_motor_read_bus_voltage();
+//    }
+//    if ((s_service_divider % 20U) == 0U)
+//    {
+//        canopen_motor_read_temperature();
+//        canopen_motor_read_position();
+//    }
+				
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
 }
@@ -462,6 +496,12 @@ rt_uint32_t monitor_get_charger_sample_voltage(void)
 {
     return s_charger_sample_mv;
 }
+
+void change_battery_limit(uint16_t limit)
+{
+    battery_min_limit = limit;
+}
+
 
 void monitor_init(void)
 {

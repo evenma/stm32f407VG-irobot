@@ -26,6 +26,10 @@
 #elif defined(ULTRASONIC_485)
 #include "ultrasonic_485.h"
 #endif
+#include "zltech_can_motor.h"
+#include "uart_packet.h"
+#include "packet_handle.h"
+#include "car_action.h"
 
 #define LOG_TAG "main.tag"
 #define LOG_LVL LOG_LVL_DBG
@@ -48,19 +52,28 @@ int main(void)
 	LOG_I("The current version of APP fireware is iBed-body-V%s\n",APP_VERSION);
 	rt_kprintf("/****************************************************/\n");
 
+	oled_handle_init();  // oled,led公用spi 顺序不能掉换
+	led_init();
+	led_off_all();
+	
+	monitor_init();   // 优先初始化，因为读取data分区参数设置
+
 	button_init();
 	buzzer_init();
-	oled_handle_init();
-	led_init();
-	monitor_init();
+
 #ifdef ULTRASONIC_GPIO
     hc_sr04_init();
 #elif defined(ULTRASONIC_485)
     ultrasonic_485_init();
 #endif
-	
+	zlac_motor_init();
 	qmi8658_init(); 
 	user_action_init();
+	car_action_init();
+	
+	uart_packet_init();  // 上下位机串口协议初始化
+	packet_handle_init();
+	
 	
     while (1)
     {

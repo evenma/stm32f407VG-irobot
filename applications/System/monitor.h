@@ -53,6 +53,7 @@ rt_uint32_t monitor_get_charger_sample_voltage(void);
  */
 rt_uint32_t monitor_get_heater_voltage(void);
 
+void change_battery_limit(uint16_t limit);
 /**
  * @brief Initialize monitoring system (creates a thread to periodically read ADC)
  */

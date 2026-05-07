@@ -61,6 +61,9 @@ typedef struct
 
 static LedSoftTimer_t s_led_timers[2];  // Index 0=LED7(object ID 6), Index 1=LED8(object ID 7)
 
+static rt_thread_t s_led_refresh_thread = RT_NULL;
+static rt_sem_t s_led_refresh_sem = RT_NULL;
+static volatile rt_bool_t s_led_need_refresh = RT_FALSE;
 
 /* ========== Internal Function Prototypes ========== */
 
@@ -89,6 +92,30 @@ static void led_trigger_rck_high(void);
  */
 static void led_soft_timer_callback(void *parameter);
 
+static void led_init_timers(void)
+{
+    for (int i = 0; i < 2; i++) {
+        rt_timer_init(&s_led_timers[i].timer_obj,
+                      "ledftmr",
+                      led_soft_timer_callback,
+                      &s_led_timers[i],
+                      0,
+                      RT_TIMER_FLAG_SOFT_TIMER);  // 先不启动，只创建
+    }
+}
+
+static void led_refresh_thread_entry(void *param)
+{
+    while (1) {
+        /* 等待刷新信号（或超时 100ms 进行兜底） */
+        rt_sem_take(s_led_refresh_sem, RT_TICK_PER_SECOND / 10); // 100ms 超时
+        if (s_led_need_refresh) {
+            s_led_need_refresh = RT_FALSE;
+            /* 使用互斥锁发送 SPI（安全，不在中断/定时器回调中） */
+            led_send_to_spi();
+        }
+    }
+}
 
 /* ========== Public Functions Implementation ========== */
 
@@ -119,6 +146,25 @@ void led_init(void)
         return;
     }
     rt_kprintf("[LED] SPI2 opened (or already opened by OLED)\n");
+		
+		    /* 创建刷新信号量（初始 0） */
+    s_led_refresh_sem = rt_sem_create("led_ref", 0, RT_IPC_FLAG_FIFO);
+    if (s_led_refresh_sem == RT_NULL) {
+        rt_kprintf("[LED] Failed to create refresh semaphore\n");
+        return;
+    }
+		
+    /* 创建 LED 刷新线程（优先级低于 OLED 更新任务，避免互斥锁长时间占用）*/
+    s_led_refresh_thread = rt_thread_create("led_ref",
+                                            led_refresh_thread_entry,
+                                            RT_NULL,
+                                            512,
+                                            29, // 低优先级
+                                            5);
+    if (s_led_refresh_thread) {
+        rt_thread_startup(s_led_refresh_thread);
+    }		
+		
     
     /* 2. Configure all LED objects */
     for (i = 0; i < LED_TOTAL_COUNT; i++)
@@ -140,6 +186,8 @@ void led_init(void)
     
     /* 5. Mark as initialized */
     s_initialized = RT_TRUE;
+		
+		led_init_timers();
     
     rt_kprintf("[LED] Initialized %d LEDs via SPI+74HC595\n", LED_TOTAL_COUNT);
 }
@@ -160,6 +208,11 @@ static void led_update_shift_register(void)
             
         }
     }
+		
+		s_led_need_refresh = RT_TRUE;
+		if (s_led_refresh_sem) {
+				rt_sem_release(s_led_refresh_sem);
+		}
 }
 
 
@@ -195,7 +248,7 @@ static void led_send_to_spi(void)
     }
       
     uint8_t tx_byte = shift_register_output;
-		rt_kprintf("[LED] Sending 0x%02x to SPI\n", tx_byte);   // 调试打印
+//		rt_kprintf("[LED] Sending 0x%02x to SPI\n", tx_byte);   // 调试打印
 		
 		    /* Acquire SPI mutex protection */
     oled_spi_lock();
@@ -212,7 +265,7 @@ static void led_send_to_spi(void)
     }
     
     /* 3. Delay then pull up RCK to trigger output latch */
-    rt_thread_mdelay(1);
+ //   rt_thread_mdelay(1);
     led_trigger_rck_high();
     
     /* Release mutex */
@@ -240,6 +293,16 @@ int led_set_color(rt_uint8_t id, LedColorState_t state)
     led_send_to_spi();
     return RT_EOK;
 }
+
+// 定期刷新led灯
+int led_flush(void)
+{
+    if (!s_initialized) return -RT_ERROR;
+    led_update_shift_register();
+    led_send_to_spi();
+    return RT_EOK;
+}
+
 
 
 /**
@@ -569,17 +632,14 @@ int led_flash(uint8_t led_idx, uint16_t on_time_ms, uint16_t off_time_ms, uint16
     timer->last_state = RT_TRUE;
 		timer->is_flashing = RT_TRUE;
     
- // 初始化定时器对象（如果尚未初始化，可重复调用）
-    rt_timer_init(&timer->timer_obj,
-                  "ledftmr",
-                  led_soft_timer_callback,
-                  timer,                // 传递 timer 指针作为参数
-                  timer->on_ticks,       // 初始超时时间设为 on_ticks
-                  RT_TIMER_FLAG_PERIODIC | RT_TIMER_FLAG_SOFT_TIMER);  // 使用软定时器（线程上下文）
-    
-    /* Start timer */
+    // 修改定时器超时时间并启动
+    rt_timer_control(&timer->timer_obj, RT_TIMER_CTRL_SET_TIME, &timer->on_ticks);
     rt_timer_start(&timer->timer_obj);
-    timer->is_flashing = RT_TRUE;
+
+    // 初次点亮 LED
+    led_objects[led_idx + 6].color_state = LED_COLOR_ON;
+    led_update_shift_register();
+    led_send_to_spi();
     
     rt_kprintf("[LED] Flash started: LED%d on=%dms off=%dms repeat=%d\n", 
                led_idx + 7, on_time_ms, off_time_ms, repeat);
@@ -587,66 +647,46 @@ int led_flash(uint8_t led_idx, uint16_t on_time_ms, uint16_t off_time_ms, uint16
     return 0;
 }
 
-
 /**
- * @brief LED soft timer callback (checks every 1ms)
+ * @brief LED soft timer callback (chain-timer mode)
  */
 static void led_soft_timer_callback(void *parameter)
-{    
-    LedSoftTimer_t *led_timer = (LedSoftTimer_t *)parameter;
-		int timer_idx = (led_timer == &s_led_timers[0]) ? 0 : 1;
-    int led_obj_idx = timer_idx + 6;  /* LED7=6, LED8=7 */
-    
-    static rt_tick_t s_elapsed_ms[2] = {0};  /* Record elapsed time */
-    
-    s_elapsed_ms[timer_idx]++;
-    
-    /* Calculate current state based on timing */
-    rt_tick_t total_cycle_ticks = led_timer->on_ticks + led_timer->off_ticks;
-    rt_tick_t elapsed_in_cycle = s_elapsed_ms[timer_idx] % total_cycle_ticks;
-    
-    rt_bool_t should_be_on = (elapsed_in_cycle < led_timer->on_ticks);
-    
-    if (should_be_on != led_timer->last_state)
-    {
-        /* State changed */
-        led_timer->last_state = should_be_on;
-        
-        if (should_be_on)
-        {
-            /* Turn ON */
-            led_objects[led_obj_idx].color_state = LED_COLOR_ON;
-            
-            /* Check if need to stop */
-            if (led_timer->remaining_repeats > 0)
-            {
-                led_timer->remaining_repeats--;
-                if (led_timer->remaining_repeats == 0)
-                {
-                    /* All flashes complete, keep final ON state and stop timer */
-                    s_elapsed_ms[timer_idx] = 0;
-                    return;  /* Keep ON, don't turn off */
-                }
-            }
-        }
-        else
-        {
-            /* Turn OFF */
-            led_objects[led_obj_idx].color_state = LED_COLOR_OFF;
-        }
-        
-        /* Update shift register and send via SPI (with mutex) */
+{
+    LedSoftTimer_t *timer = (LedSoftTimer_t *)parameter;
+    int timer_idx = (timer == &s_led_timers[0]) ? 0 : 1;
+    int led_obj_idx = timer_idx + 6;  /* LED7 = 6, LED8 = 7 */
+
+    /* 获取当前 LED 状态 */
+    rt_bool_t currently_on = (led_objects[led_obj_idx].color_state == LED_COLOR_ON);
+
+    if (currently_on) {
+        /* 当前亮 → 灭 */
+        led_objects[led_obj_idx].color_state = LED_COLOR_OFF;
         led_update_shift_register();
-        oled_spi_lock();
-        if (s_initialized && s_spi_dev)
-        {
-            led_prepare_rck_low();
-            uint8_t tx_byte = shift_register_output;
-            rt_device_write(s_spi_dev, 0, &tx_byte, 1);
-            rt_thread_mdelay(1);
-            led_trigger_rck_high();
+
+        /* 一个完整的亮灭周期结束，减少剩余重复次数 */
+        if (timer->remaining_repeats > 0) {
+            timer->remaining_repeats--;
         }
-        oled_spi_unlock();
+
+        /* 如果所有周期已完成，停止闪烁并返回 */
+        if (timer->remaining_repeats == 0) {
+            rt_timer_stop(&timer->timer_obj);
+            timer->is_flashing = RT_FALSE;
+            return;
+        }
+
+        /* 否则，设置下次超时为 off_ticks，准备切换回亮 */
+        rt_timer_control(&timer->timer_obj, RT_TIMER_CTRL_SET_TIME, &timer->off_ticks);
+        rt_timer_start(&timer->timer_obj);
+    } else {
+        /* 当前灭 → 亮 */
+        led_objects[led_obj_idx].color_state = LED_COLOR_ON;
+        led_update_shift_register();
+			
+        /* 设置下次超时为 on_ticks，准备切换回灭 */
+        rt_timer_control(&timer->timer_obj, RT_TIMER_CTRL_SET_TIME, &timer->on_ticks);
+        rt_timer_start(&timer->timer_obj);
     }
 }
 

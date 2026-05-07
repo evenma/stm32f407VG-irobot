@@ -31,6 +31,7 @@
 #elif defined(ULTRASONIC_485)
     #include "ultrasonic_485.h"
 #endif
+#include "zltech_can_motor.h"
 /**
  * ========== Global Variables ==========
  */
@@ -77,6 +78,11 @@ static uint8_t s_page_count = 0;
  */
 static OledPage_t s_pages[PAGE_COUNT];
 
+/* 上位机发送数据显示缓冲区（供 packet_handle 使用）*/
+char oled_l1[21] = {0};
+char oled_l2[21] = {0};
+char oled_l3[21] = {0};
+char oled_l4[21] = {0};
 
 /**
  * ========== Internal Function Prototypes ==========
@@ -85,19 +91,24 @@ static void oled_gpio_init(void);
 static void u8g2_init(void);
 static void render_boot_page(u8g2_t* u8g2);
 static void render_home_page(u8g2_t* u8g2);
-static void render_pid_tuning_page(u8g2_t* u8g2);
 static void render_ultrasonic_page(u8g2_t* u8g2);
 static void render_ir_sensor_page(u8g2_t* u8g2);
 static void render_battery_info_page(u8g2_t* u8g2);
 static void render_water_level_page(u8g2_t* u8g2);
-static void render_motor_status_page(u8g2_t* u8g2);
 static void render_imu_data_page(u8g2_t* u8g2);
 static void render_fault_log_page(u8g2_t* u8g2);
 static void render_settings_page(u8g2_t* u8g2);
+static void render_zlac_monitor1_page(u8g2_t* u8g2);
+static void render_zlac_monitor2_page(u8g2_t* u8g2);
+static void render_zlac_vel_pid_page(u8g2_t* u8g2);
+static void render_zlac_pos_pid_page(u8g2_t* u8g2);
+static void render_zlac_motor_param_page(u8g2_t* u8g2);
+static void render_zlac_config_page(u8g2_t* u8g2);
+static void render_uart_data_page(u8g2_t* u8g2);
 
 static void oled_update_task(void *parameter);
 static void oled_key_task(void *parameter);
-
+void oled_set_page_interval(OledPageId_t page_id, uint16_t interval_ms);
 /**
  * ========== Public Functions ==========
  */
@@ -118,17 +129,32 @@ void oled_handle_init(void)
     // Register all pages
     oled_register_page(PAGE_BOOT, "Booting...", render_boot_page);
     oled_register_page(PAGE_HOME, "Main Menu", render_home_page);
-    oled_register_page(PAGE_PID_TUNING, "PID Tuning", render_pid_tuning_page);
+	
+    oled_register_page(PAGE_BATTERY_INFO, "Battery Info", render_battery_info_page);
+	  oled_register_page(PAGE_IMU_DATA, "IMU Data", render_imu_data_page);
     oled_register_page(PAGE_ULTRASONIC, "Ultrasonic", render_ultrasonic_page);
     oled_register_page(PAGE_IR_SENSOR, "IR Sensors", render_ir_sensor_page);
-    oled_register_page(PAGE_BATTERY_INFO, "Battery Info", render_battery_info_page);
-    oled_register_page(PAGE_WATER_LEVEL, "Water Level", render_water_level_page);
-    oled_register_page(PAGE_MOTOR_STATUS, "Motor Status", render_motor_status_page);
-    oled_register_page(PAGE_IMU_DATA, "IMU Data", render_imu_data_page);
+    
+		oled_register_page(PAGE_WATER_LEVEL, "Water Level", render_water_level_page);
+
+	    // 注册 ZLAC8015D 电机相关页面
+    oled_register_page(PAGE_ZLAC_MONITOR1, "ZLtech Monitor1", render_zlac_monitor1_page);
+    oled_register_page(PAGE_ZLAC_MONITOR2, "ZLtech Monitor2", render_zlac_monitor2_page);
+    oled_register_page(PAGE_ZLAC_VEL_PID,  "ZLtech Vel PID",  render_zlac_vel_pid_page);
+    oled_register_page(PAGE_ZLAC_POS_PID,  "ZLtech Pos PID",  render_zlac_pos_pid_page);
+    oled_register_page(PAGE_ZLAC_MOTOR_PARAM, "ZLtech Motor", render_zlac_motor_param_page);
+    oled_register_page(PAGE_ZLAC_CONFIG,   "ZLtech Config",  render_zlac_config_page);
+	
     oled_register_page(PAGE_FAULT_LOG, "Fault Log", render_fault_log_page);
     oled_register_page(PAGE_SETTINGS, "Settings", render_settings_page);
-    
+		
+		oled_register_page(PAGE_UART_DATA, "UART Data", render_uart_data_page);
+
     s_page_count = PAGE_COUNT;
+		
+		    // 为实时监控页面设置更快的刷新间隔（500ms）
+    oled_set_page_interval(PAGE_ZLAC_MONITOR1, 500);
+    oled_set_page_interval(PAGE_ZLAC_MONITOR2, 500);
     
     // Create OLED update task
     s_oled_thread = rt_thread_create("oled",
@@ -344,11 +370,11 @@ static void draw_battery_indicator(uint8_t x, uint8_t y)
     uint32_t mv = g_oled_battery_mv;
     // 限制电压范围
     if (mv > BATTERY_FULL_VOLTAGE_MV) mv = BATTERY_FULL_VOLTAGE_MV;
-    if (mv < BATTERY_LOW_VOLTAGE_MV) mv = BATTERY_LOW_VOLTAGE_MV;
+    if (mv < BATTERY_NULL_VOLTAGE_MV) mv = BATTERY_NULL_VOLTAGE_MV;
     
     // 计算填充宽度（0~30像素）
-    uint32_t range = BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV;
-    uint32_t fill = (mv - BATTERY_LOW_VOLTAGE_MV) * 30 / range;
+    uint32_t range = BATTERY_FULL_VOLTAGE_MV - BATTERY_NULL_VOLTAGE_MV;
+    uint32_t fill = (mv - BATTERY_NULL_VOLTAGE_MV) * 30 / range;
     uint8_t fill_width = (uint8_t)fill;
     
     // 绘制电池外框和尖端（不变）
@@ -616,9 +642,12 @@ static void render_home_page(u8g2_t* u8g2)
     u8g2_DrawStr(u8g2, 8, y, bat_str);
     y += 8;
 
-	//进度条 计算电量百分比 (Vmin=19.2V, Vmax=25.2V)
-		uint8_t bat_percent = (g_oled_battery_mv - BATTERY_LOW_VOLTAGE_MV) * 100 / 
-													(BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV);
+	//进度条 计算电量百分比 (Vmin=16.8V, Vmax=25.2V)
+		int voltage = g_oled_battery_mv;
+		if (voltage > BATTERY_FULL_VOLTAGE_MV) voltage = BATTERY_FULL_VOLTAGE_MV;
+		if (voltage < BATTERY_NULL_VOLTAGE_MV) voltage = BATTERY_NULL_VOLTAGE_MV;
+		uint8_t bat_percent = (voltage - BATTERY_NULL_VOLTAGE_MV) * 100 / 
+													(BATTERY_FULL_VOLTAGE_MV - BATTERY_NULL_VOLTAGE_MV);
 		if (bat_percent > 100) bat_percent = 100;
 		draw_progress_bar(8, y, 112, 6, bat_percent);
     y += 15;
@@ -627,38 +656,6 @@ static void render_home_page(u8g2_t* u8g2)
     y += 10;
     u8g2_DrawStr(u8g2, 8, y, "Mode: Standby");
 
-}
-
-static void render_pid_tuning_page(u8g2_t* u8g2)
-{
-    oled_draw_title_bar("PID Tuning", RT_TRUE);
-    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
-    uint8_t y = 30;
-	
-	// 声明外部 PID 变量（需在实际代码中定义）
- //   extern float g_pid_kp, g_pid_ki, g_pid_kd;
-	float g_pid_kp = 2.5;
-	float	g_pid_ki = 0.05;
-	float g_pid_kd = 0.85;
-
-    char buf[20];
-
-    // 显示 Kp（比例系数）
-    int16_t kp_int = (int16_t)(g_pid_kp * 100);
-	rt_snprintf(buf, sizeof(buf), "Kp: %d.%02d", kp_int / 100, kp_int % 100);
-    u8g2_DrawStr(u8g2, 8, y, buf);
-    y += 12;
-
-    // 显示 Ki（积分系数）
-    int16_t ki_int = (int16_t)(g_pid_ki * 100);
-	rt_snprintf(buf, sizeof(buf), "Ki: %d.%02d", ki_int / 100, ki_int % 100);
-    u8g2_DrawStr(u8g2, 8, y, buf);
-    y += 12;
-
-    // 显示 Kd（微分系数）
-    int16_t kd_int = (int16_t)(g_pid_kd * 100);
-    rt_snprintf(buf, sizeof(buf), "Kd: %d.%02d", kd_int / 100, kd_int % 100);
-    u8g2_DrawStr(u8g2, 8, y, buf);
 }
 
 static void render_ultrasonic_page(u8g2_t* u8g2)
@@ -764,8 +761,12 @@ static void render_battery_info_page(u8g2_t* u8g2)
     y += 10;
 
     // 电量百分比
-    uint8_t percent = (g_oled_battery_mv - BATTERY_LOW_VOLTAGE_MV) * 100 /
-                      (BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV);
+		int voltage = g_oled_battery_mv;
+		if (voltage > BATTERY_FULL_VOLTAGE_MV) voltage = BATTERY_FULL_VOLTAGE_MV;
+		if (voltage < BATTERY_NULL_VOLTAGE_MV) voltage = BATTERY_NULL_VOLTAGE_MV;
+		int percent = (voltage - BATTERY_NULL_VOLTAGE_MV) * 100 / (BATTERY_FULL_VOLTAGE_MV - BATTERY_NULL_VOLTAGE_MV);
+//    uint8_t percent = (g_oled_battery_mv - BATTERY_LOW_VOLTAGE_MV) * 100 /
+//                      (BATTERY_FULL_VOLTAGE_MV - BATTERY_LOW_VOLTAGE_MV);
     if (percent > 100) percent = 100;
     rt_snprintf(buf, sizeof(buf), "Level: %d%%", percent);
     u8g2_DrawStr(u8g2, 8, y, buf);
@@ -827,22 +828,6 @@ static void render_water_level_page(u8g2_t* u8g2)
     } else {
         u8g2_DrawStr(u8g2, 8, y, "Dry: Idle");
     }		
-}
-
-static void render_motor_status_page(u8g2_t* u8g2)
-{
-    // Motor operational status
-    oled_draw_title_bar("Motor Status", RT_TRUE);
-    
-    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
-    uint8_t y = 30;
-    u8g2_DrawStr(u8g2, 8, y, "Left Motor:  0 RPM");
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Right Motor: 0 RPM");
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Cleaning Rod:");
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Tube Switcher:");
 }
 
 static void render_imu_data_page(u8g2_t* u8g2)
@@ -944,6 +929,208 @@ static void render_imu_data_page(u8g2_t* u8g2)
     }
 }
 
+//1. 实时动态数据页面1（速度、位置、温度、运行状态）
+static void render_zlac_monitor1_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("ZLtech Monitor1", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    int16_t vel_l, vel_r;
+    int32_t pos_l, pos_r;
+    int16_t temp_l, temp_r, temp_d;
+    uint16_t status_l = zlac_get_motor_status_left();
+    uint16_t status_r = zlac_get_motor_status_right();
+    
+    zlac_get_velocity(&vel_l, &vel_r);
+    zlac_get_position(&pos_l, &pos_r);
+    temp_l = zlac_get_motor_temp_left();
+    temp_r = zlac_get_motor_temp_right();
+    temp_d = zlac_get_driver_temp();
+    
+    char buf[32];
+    uint8_t y = 28;
+    
+    // 速度（使用 format_float）
+    format_float(vel_l / 10.0f, buf, 5, 1, 0);
+    u8g2_DrawStr(u8g2, 8, y, "Vel L:");
+    u8g2_DrawStr(u8g2, 45, y, buf);
+    format_float(vel_r / 10.0f, buf, 5, 1, 0);
+    u8g2_DrawStr(u8g2, 75, y, " R:");
+    u8g2_DrawStr(u8g2, 90, y, buf);
+    y += 9;
+    
+    // 位置：左电机一行
+    rt_snprintf(buf, sizeof(buf), "Pos L: %10ld", pos_l);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 9;
+    // 右电机一行
+    rt_snprintf(buf, sizeof(buf), "Pos R: %10ld", pos_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 9;
+    
+    // 温度：合并左右温度，运行状态并入此行
+    format_float(temp_l / 10.0f, buf, 5, 1, 0);
+    u8g2_DrawStr(u8g2, 8, y, "Tmp L:");
+    u8g2_DrawStr(u8g2, 45, y, buf);
+    format_float(temp_r / 10.0f, buf, 5, 1, 0);
+    u8g2_DrawStr(u8g2, 75, y, " R:");
+    u8g2_DrawStr(u8g2, 90, y, buf);
+    y += 9;
+    
+    // 电机运行状态
+    rt_snprintf(buf, sizeof(buf), "Run: L=%s R=%s", status_l ? "RUN" : "STOP", status_r ? "RUN" : "STOP");
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+//2. 实时动态数据页面2（在线、抱闸、状态字、故障码）
+static void render_zlac_monitor2_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("ZLtech Monitor2", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    rt_bool_t online = zlac_is_online();
+    uint16_t brake_left, brake_right;
+    zlac_get_brake(&brake_left, &brake_right);
+    uint32_t full_status = read_full_statusword();
+    uint32_t fault = zlac_get_fault_code();
+    
+    char buf[32];
+    uint8_t y = 28;
+    // 在线状态
+    u8g2_DrawStr(u8g2, 8, y, online ? "Online: Yes" : "Online: No");
+    y += 10;
+    // 抱闸状态
+    rt_snprintf(buf, sizeof(buf), "Brake:L=%s R=%s", brake_left ? "Eng" : "Rel", brake_right ? "Eng" : "Rel");
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    // 全状态字
+    rt_snprintf(buf, sizeof(buf), "Status:0x%08X", full_status);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    // 故障码（只显示低16位或简化显示）
+    if (fault)
+        rt_snprintf(buf, sizeof(buf), "Fault: 0x%08X", fault);
+    else
+        rt_snprintf(buf, sizeof(buf), "Fault: None");
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+//3. 速度环 PID 页面
+static void render_zlac_vel_pid_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("ZLtech Vel PID", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    uint16_t kp_l, kp_r, ki_l, ki_r, kf_l, kf_r;
+    uint16_t smooth_l, smooth_r;
+    zlac_get_velocity_pid_kp(&kp_l, &kp_r);
+    zlac_get_velocity_pid_ki(&ki_l, &ki_r);
+    zlac_get_velocity_pid_kf(&kf_l, &kf_r);
+    zlac_get_vel_smooth(&smooth_l, &smooth_r);
+    
+    char buf[32];
+    uint8_t y = 28;
+    rt_snprintf(buf, sizeof(buf), "Kp: %4d %4d", kp_l, kp_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Ki: %4d %4d", ki_l, ki_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Kf: %4d %4d", kf_l, kf_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Smooth:%4d %4d", smooth_l, smooth_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+//4. 位置环 PID 页面（Kp, Kf）
+static void render_zlac_pos_pid_page(u8g2_t* u8g2)
+{
+    uint16_t ff_smooth_l, ff_smooth_r; 
+		oled_draw_title_bar("ZLtech Pos PID", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    uint16_t kp_l, kp_r, kf_l, kf_r;
+    zlac_get_position_kp(&kp_l, &kp_r);
+    zlac_get_position_kf(&kf_l, &kf_r);
+    
+		zlac_get_ff_smooth(&ff_smooth_l, &ff_smooth_r);   
+    
+		char buf[32];
+    uint8_t y = 28;
+    rt_snprintf(buf, sizeof(buf), "Kp: %4d %4d", kp_l, kp_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Kf: %4d %4d", kf_l, kf_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+	  y += 10;
+    rt_snprintf(buf, sizeof(buf), "FF Sm:%4d %4d", ff_smooth_l, ff_smooth_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+//5. 电流环 PID 及平滑系数页面  删除
+
+//6. 电机基本参数页面
+static void render_zlac_motor_param_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("ZLtech Motor", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    uint16_t encoder_l, encoder_r;
+    uint16_t poles_l, poles_r;
+    uint16_t peak_l, peak_r;
+    uint16_t max_speed;
+    zlac_get_encoder_lines(&encoder_l, &encoder_r);
+    zlac_get_motor_poles(&poles_l, &poles_r);
+    zlac_get_current_peak(&peak_l, &peak_r);
+    max_speed = zlac_get_max_speed();
+    
+    char buf[32];
+    uint8_t y = 28;
+    rt_snprintf(buf, sizeof(buf), "Encoder:%4d %4d", encoder_l, encoder_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Poles:  %4d %4d", poles_l, poles_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Peak A: %4d %4d", peak_l/10, peak_r/10); // 单位0.1A -> A
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Max rpm: %4d", max_speed);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+//7. 设置参数页面（初始方向、工作模式、加速减速时间
+static void render_zlac_config_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("ZLtech Config", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    
+    uint16_t init_dir = zlac_get_init_direction();
+    uint16_t op_mode = zlac_get_op_mode();
+    uint32_t accel_l, accel_r, decel_l, decel_r;
+    zlac_get_accel_time(&accel_l, &accel_r);
+    zlac_get_decel_time(&decel_l, &decel_r);
+    const char* mode_str = (op_mode == 1) ? "Pos" : ((op_mode == 3) ? "Vel" : ((op_mode == 4) ? "Torq" : "Unk"));
+    if(op_mode == 1){
+			ZlacPositionMode_t pos = zlac_get_position_mode();
+			mode_str = (pos == ZLAC_POS_MODE_ABSOLUTE) ? "Abs Pos" : "Rel Pos";
+    }
+		char buf[32];
+    uint8_t y = 28;
+    rt_snprintf(buf, sizeof(buf), "Dir: %s", init_dir ? "CCW" : "CW");
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Mode: %s", mode_str);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Acc: %4ld %4ld ms", accel_l, accel_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
+    rt_snprintf(buf, sizeof(buf), "Dec: %4ld %4ld ms", decel_l, decel_r);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
 static void render_fault_log_page(u8g2_t* u8g2)
 {
     // Fault/error log display
@@ -976,6 +1163,48 @@ static void render_settings_page(u8g2_t* u8g2)
     u8g2_DrawStr(u8g2, 8, y, "Auto-off: 30min");
 }
 
+// 上位机数据显示
+static void render_uart_data_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("UART Data", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    uint8_t y = 30;
+    uint8_t line_height = 10;
+
+    // 显示第 1 行
+    if (oled_l1[0] != '\0')
+        u8g2_DrawStr(u8g2, 8, y, oled_l1);
+    else
+        u8g2_DrawStr(u8g2, 8, y, "---");
+
+    // 第 2 行
+    if (oled_l2[0] != '\0')
+        u8g2_DrawStr(u8g2, 8, y + line_height, oled_l2);
+    else
+        u8g2_DrawStr(u8g2, 8, y + line_height, "---");
+
+    // 第 3 行（如果定义了子命令 0x03）
+    if (oled_l3[0] != '\0')
+        u8g2_DrawStr(u8g2, 8, y + line_height * 2, oled_l3);
+    // 第 4 行
+    if (oled_l4[0] != '\0')
+        u8g2_DrawStr(u8g2, 8, y + line_height * 3, oled_l4);
+}
+// 方便 packet_handle 更新任意行
+void oled_set_uart_line(uint8_t line, const char* text)
+{
+    char* target = NULL;
+    switch (line) {
+        case 1: target = oled_l1; break;
+        case 2: target = oled_l2; break;
+        case 3: target = oled_l3; break;
+        case 4: target = oled_l4; break;
+        default: return;
+    }
+    strncpy(target, text, 20);
+    target[20] = '\0';
+    oled_trigger_refresh();  // 立即刷新
+}
 
 /**
  * ========== MSH Console Commands for Testing (v1.1.4 - CORRECT EXPORT ALIASES) ==========
@@ -1020,20 +1249,27 @@ void oled_test(int argc, char *argv[])
         
         switch (page_id)
         {
-            case PAGE_BOOT:      rt_kprintf("[OLED] Page 0: Boot Logo + Progress Bar\r\n");       break;
-            case PAGE_HOME:      rt_kprintf("[OLED] Page 1: Main Menu + Battery Info\r\n");   break;
-            case PAGE_PID_TUNING: rt_kprintf("[OLED] Page 2: PID Tuning Interface\r\n");     break;
-            case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page 3: Ultrasonic Sensor Data\r\n");    break;
-            case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page 4: IR Cliff Sensors\r\n");          break;
-            case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page 5: Detailed Battery Status\r\n"); break;
-            case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page 6: Water Tank Level\r\n");         break;
-            case PAGE_MOTOR_STATUS: rt_kprintf("[OLED] Page 7: Motor RPM and Steppers\r\n");  break;
-            case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page 8: IMU Pitch/Roll/Yaw\r\n");        break;
-            case PAGE_FAULT_LOG:  rt_kprintf("[OLED] Page 9: System Fault Log\r\n");         break;
-            case PAGE_SETTINGS:   rt_kprintf("[OLED] Page 10: System Settings Menu\r\n");     break;
+            case PAGE_BOOT:      rt_kprintf("[OLED] Page %d: Boot Logo + Progress Bar\r\n",PAGE_BOOT);       break;
+            case PAGE_HOME:      rt_kprintf("[OLED] Page %d: Main Menu + Battery Info\r\n",PAGE_HOME);   break;
+            case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page %d: Detailed Battery Status\r\n",PAGE_BATTERY_INFO); break;
+            case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page %d: IMU Pitch/Roll/Yaw\r\n",PAGE_IMU_DATA);        break;
+						case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic Sensor Data\r\n",PAGE_ULTRASONIC);    break;
+            case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
+
+            case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page %d: Water Tank Level\r\n",PAGE_WATER_LEVEL);         break;
+
+            case PAGE_ZLAC_MONITOR1: rt_kprintf("[OLED] Page %d: ZLtech Monitor1\r\n",PAGE_ZLAC_MONITOR1);         break;
+            case PAGE_ZLAC_MONITOR2: rt_kprintf("[OLED] Page %d: ZLtech Monitor2\r\n",PAGE_ZLAC_MONITOR2);         break;
+            case PAGE_ZLAC_VEL_PID: rt_kprintf("[OLED] Page %d: ZLtech Vel PID\r\n",PAGE_ZLAC_VEL_PID);         break;
+            case PAGE_ZLAC_POS_PID: rt_kprintf("[OLED] Page %d: ZLtech Pos PID\r\n",PAGE_ZLAC_POS_PID);         break;
+            case PAGE_ZLAC_MOTOR_PARAM: rt_kprintf("[OLED] Page %d: ZLtech Motor param\r\n",PAGE_ZLAC_MOTOR_PARAM);         break;
+            case PAGE_ZLAC_CONFIG: rt_kprintf("[OLED] Page %d: ZLtech Other Config\r\n",PAGE_ZLAC_CONFIG);         break;
+
+						case PAGE_FAULT_LOG:  rt_kprintf("[OLED] Page %d: System Fault Log\r\n",PAGE_FAULT_LOG);         break;
+            case PAGE_SETTINGS:   rt_kprintf("[OLED] Page %d: System Settings Menu\r\n",PAGE_FAULT_LOG);     break;
             default:              rt_kprintf("[OLED] Unknown page!\r\n");                      break;
         }
-        
+  
         oled_switch_page((OledPageId_t)page_id);
         rt_kprintf("[OLED] Page switched to %d\r\n", page_id);
     }
@@ -1075,18 +1311,26 @@ void oled_status(int argc, char *argv[])
     
     switch (page)
     {
-        case PAGE_BOOT:      rt_kprintf("0 (Boot)\r\n");       break;
-        case PAGE_HOME:      rt_kprintf("1 (Home)\r\n");      break;
-        case PAGE_PID_TUNING:rt_kprintf("2 (PID Tuning)\r\n");break;
-        case PAGE_ULTRASONIC:rt_kprintf("3 (Ultrasonic)\r\n");break;
-        case PAGE_IR_SENSOR: rt_kprintf("4 (IR Sensors)\r\n");break;
-        case PAGE_BATTERY_INFO: rt_kprintf("5 (Battery)\r\n");break;
-        case PAGE_WATER_LEVEL: rt_kprintf("6 (Water Level)\r\n");break;
-        case PAGE_MOTOR_STATUS: rt_kprintf("7 (Motor Status)\r\n");break;
-        case PAGE_IMU_DATA:   rt_kprintf("8 (IMU Data)\r\n"); break;
-        case PAGE_FAULT_LOG:  rt_kprintf("9 (Fault Log)\r\n");break;
-        case PAGE_SETTINGS:   rt_kprintf("10 (Settings)\r\n");break;
-        default:              rt_kprintf("Unknown (%d)\r\n", page); break;
+				case PAGE_BOOT:      rt_kprintf("[OLED] Page %d: Boot Logo + Progress Bar\r\n",PAGE_BOOT);       break;
+				case PAGE_HOME:      rt_kprintf("[OLED] Page %d: Main Menu + Battery Info\r\n",PAGE_HOME);   break;
+				case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page %d: Detailed Battery Status\r\n",PAGE_BATTERY_INFO); break;
+				case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page %d: IMU Pitch/Roll/Yaw\r\n",PAGE_IMU_DATA);        break;
+				case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic Sensor Data\r\n",PAGE_ULTRASONIC);    break;
+				case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
+
+				case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page %d: Water Tank Level\r\n",PAGE_WATER_LEVEL);         break;
+
+				case PAGE_ZLAC_MONITOR1: rt_kprintf("[OLED] Page %d: ZLtech Monitor1\r\n",PAGE_ZLAC_MONITOR1);         break;
+				case PAGE_ZLAC_MONITOR2: rt_kprintf("[OLED] Page %d: ZLtech Monitor2\r\n",PAGE_ZLAC_MONITOR2);         break;
+				case PAGE_ZLAC_VEL_PID: rt_kprintf("[OLED] Page %d: ZLtech Vel PID\r\n",PAGE_ZLAC_VEL_PID);         break;
+				case PAGE_ZLAC_POS_PID: rt_kprintf("[OLED] Page %d: ZLtech Pos PID\r\n",PAGE_ZLAC_POS_PID);         break;
+				case PAGE_ZLAC_MOTOR_PARAM: rt_kprintf("[OLED] Page %d: ZLtech Motor param\r\n",PAGE_ZLAC_MOTOR_PARAM);         break;
+				case PAGE_ZLAC_CONFIG: rt_kprintf("[OLED] Page %d: ZLtech Other Config\r\n",PAGE_ZLAC_CONFIG);         break;
+
+				case PAGE_FAULT_LOG:  rt_kprintf("[OLED] Page %d: System Fault Log\r\n",PAGE_FAULT_LOG);         break;
+				case PAGE_SETTINGS:   rt_kprintf("[OLED] Page %d: System Settings Menu\r\n",PAGE_FAULT_LOG);     break;
+
+				default:              rt_kprintf("Unknown (%d)\r\n", page); break;
     }
     
     rt_kprintf("[OLED] Total pages: %d\r\n", s_page_count);

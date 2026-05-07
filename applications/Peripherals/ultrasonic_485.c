@@ -578,7 +578,6 @@ rt_err_t ultrasonic_485_init(void)
     config.parity = PARITY_NONE;
 		config.rx_bufsz = 64;   // 接收缓冲区大小
 		config.tx_bufsz = 64;   // 发送缓冲区大小（若不需要大缓冲区，也可设为较小值）
-		config.parity    = PARITY_NONE; 
     rt_device_control(serial, RT_DEVICE_CTRL_CONFIG, &config);
 
     /* 打开串口（阻塞读写，非 DMA）*/
