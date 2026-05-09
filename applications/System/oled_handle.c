@@ -730,21 +730,83 @@ static void render_ultrasonic_page(u8g2_t* u8g2)
     u8g2_DrawStr(u8g2, 8, 30, "Ultrasonic: None");
 #endif
 }
+// 距离转换表（电压 mV -> 距离 mm），按电压从高到低排列
+typedef struct {
+    uint16_t voltage_mv;
+    uint16_t distance_mm;
+} DistMap_t;
+
+static const DistMap_t s_dist_map[] = {
+    { 2500, 15 },   // 1.5cm 对应 2.5V，但实际1.5cm已是最小可靠距离，故取15mm
+    { 2060, 20 },   // 2.0cm
+    { 1050, 50 },   // 5.0cm
+    { 596,  100 },  // 10.0cm
+    { 400,  150 },  // 15.0cm
+    { 300,  200 },  // 20.0cm
+};
+#define DIST_MAP_SIZE (sizeof(s_dist_map) / sizeof(s_dist_map[0]))
+
+/**
+ * @brief 将悬崖传感器电压转换为距离（毫米）
+ * @param voltage_mv 传感器输出电压（mV）
+ * @return 距离（mm），若超出范围则返回最大值200mm或最小值15mm
+ */
+static uint16_t cliff_voltage_to_distance(uint16_t voltage_mv)
+{
+    // 超出最大值（小于最小电压）返回最大距离
+    if (voltage_mv <= s_dist_map[DIST_MAP_SIZE - 1].voltage_mv)
+        return s_dist_map[DIST_MAP_SIZE - 1].distance_mm;
+    // 超出最小值（大于最大电压）返回最小距离
+    if (voltage_mv >= s_dist_map[0].voltage_mv)
+        return s_dist_map[0].distance_mm;
+
+    // 查找所在区间（电压递减）
+    for (uint8_t i = 0; i < DIST_MAP_SIZE - 1; i++) {
+        if (voltage_mv <= s_dist_map[i].voltage_mv && voltage_mv >= s_dist_map[i+1].voltage_mv) {
+            // 线性插值
+            uint16_t v_high = s_dist_map[i].voltage_mv;
+            uint16_t v_low  = s_dist_map[i+1].voltage_mv;
+            uint16_t d_high = s_dist_map[i].distance_mm;
+            uint16_t d_low  = s_dist_map[i+1].distance_mm;
+            // 距离 mm = d_high + (d_low - d_high) * (v_high - voltage_mv) / (v_high - v_low)
+            uint32_t diff = (uint32_t)(d_low - d_high) * (v_high - voltage_mv) / (v_high - v_low);
+            return d_high + diff;
+        }
+    }
+    // fallback
+    return s_dist_map[DIST_MAP_SIZE - 1].distance_mm;
+}
+
 
 static void render_ir_sensor_page(u8g2_t* u8g2)
 {
-	  oled_draw_title_bar("IR Sensors", RT_TRUE);
+    oled_draw_title_bar("IR Sensors", RT_TRUE);
     u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
     uint8_t y = 30;
-    u8g2_DrawStr(u8g2, 8, y, "Cliff Front: OK");
+    char buf[24];
+    uint16_t front_mv, rear_mv;
+    rt_bool_t cliff_trigger;
+
+    // 读取悬崖传感器数据
+    read_cliff_sensor(&front_mv, &rear_mv, &cliff_trigger);
+
+		// 转换为距离（毫米）
+    uint16_t front_mm = cliff_voltage_to_distance(front_mv);
+    uint16_t rear_mm  = cliff_voltage_to_distance(rear_mv);
+
+    // 显示前悬崖距离
+    rt_snprintf(buf, sizeof(buf), "Front: %3d mm", front_mm);
+    u8g2_DrawStr(u8g2, 8, y, buf);
     y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Cliff Rear:  OK");
-    y += 2;
+    // 显示后悬崖距离
+    rt_snprintf(buf, sizeof(buf), "Rear:  %3d mm", rear_mm);
+    u8g2_DrawStr(u8g2, 8, y, buf);
+    y += 10;
     u8g2_DrawHLine(u8g2, 8, y, 112);
     y += 8;
-    u8g2_DrawStr(u8g2, 8, y, "Charging Align:");
-    y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Ready");
+    // 显示悬崖触发状态
+    rt_snprintf(buf, sizeof(buf), "Cliff: %s", cliff_trigger ? "WARNING" : "OK");
+    u8g2_DrawStr(u8g2, 8, y, buf);
 }
 
 static void render_battery_info_page(u8g2_t* u8g2)
@@ -805,29 +867,25 @@ static void render_water_level_page(u8g2_t* u8g2)
         u8g2_DrawStr(u8g2, 8, y, "Low Water:  OK");
     }
     y += 10;
-
-   // 工作状态：清洁臀部
-    const WorkStatus_t* status = user_action_get_work_status();
-    if (status->clean_rear) {
-        u8g2_DrawStr(u8g2, 8, y, "Rear Clean: Working");
+		// 第二行：高水位状态
+    if (monitor_get_water_high_level()) {
+        u8g2_DrawStr(u8g2, 8, y, "High Water: FULL");
     } else {
-        u8g2_DrawStr(u8g2, 8, y, "Rear Clean: Idle");
+        u8g2_DrawStr(u8g2, 8, y, "High Water: ---");
     }
     y += 10;
-		
-	// 工作状态：清洁女性
-    if (status->clean_female) {
-        u8g2_DrawStr(u8g2, 8, y, "Female Clean: Working");
+    u8g2_DrawHLine(u8g2, 8, y, 112);
+    y += 8;	
+		// 第三行：水温值
+    int16_t water_temp = wc_get_water_temperature();
+    char buf[24];
+    if (water_temp != -32768) {
+        rt_snprintf(buf, sizeof(buf), "WaterTemp:%d.%d C", water_temp / 10, water_temp % 10);
     } else {
-        u8g2_DrawStr(u8g2, 8, y, "Female Clean: Idle");
+        rt_snprintf(buf, sizeof(buf), "WaterTemp: ERR");
     }
-    y += 10;
-    // 工作状态：烘干
-    if (status->dry) {
-        u8g2_DrawStr(u8g2, 8, y, "Dry: Working");
-    } else {
-        u8g2_DrawStr(u8g2, 8, y, "Dry: Idle");
-    }		
+    u8g2_DrawStr(u8g2, 8, y, buf);
+	
 }
 
 static void render_imu_data_page(u8g2_t* u8g2)

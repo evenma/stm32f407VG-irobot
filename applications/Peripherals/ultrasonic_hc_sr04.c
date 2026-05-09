@@ -3,6 +3,10 @@
 #include <rtthread.h>
 #include <rtdevice.h>
 #include <board.h>
+#include "uart_packet.h"
+#include "packet_reports.h"
+#include <string.h>
+#include <stdlib.h>
 
 typedef enum {
     SEND_MODE_PER_SENSOR,   /* 每个传感器测完立即发送 */
@@ -303,8 +307,11 @@ static void poll_entry(void *parameter)
     char round_buf[256];
     int len;
 
+		rt_thread_mdelay(1000);  // 确保内存池已创建
+	
     while (poll_running)
     {
+			uint32_t batch_distances[HC_SR04_NUM] = {0};
 			  rt_tick_t start_tick = rt_tick_get();
         if (current_send_mode == SEND_MODE_PER_ROUND)
         {
@@ -330,6 +337,10 @@ static void poll_entry(void *parameter)
             if (current_send_mode == SEND_MODE_PER_SENSOR)
             {
                 /* 立即发送单个传感器数据 */
+							  PacketReportUltrasonicSingleTypeDef single;
+                single.sensor_id = i;
+                single.distance_mm = (ret == RT_EOK) ? dist_mm : 0xFFFFFFFF; // 0xFFFFFFFF 表示无效
+                uart_packet_send(PKT_FUNC_ULTRASONIC, &single, sizeof(single));
                 if (ret == RT_EOK)
                 {
                     rt_snprintf(single_buf, sizeof(single_buf), "S%d=%dmm\n", i, dist_mm);
@@ -343,6 +354,7 @@ static void poll_entry(void *parameter)
             }
             else  /* SEND_MODE_PER_ROUND */
             {
+								batch_distances[i] = (ret == RT_EOK) ? dist_mm : 0;
                 if (ret == RT_EOK)
                 {
                     len += rt_snprintf(round_buf + len, sizeof(round_buf) - len,
@@ -356,10 +368,15 @@ static void poll_entry(void *parameter)
             }
             rt_thread_mdelay(5);
         }
-
-				if (current_send_mode == SEND_MODE_PER_ROUND && poll_print_enabled)
-        {
-            rt_kprintf("%s\n", round_buf);
+        // 批量模式：一轮结束后发送所有数据
+        if (current_send_mode == SEND_MODE_PER_ROUND) {
+            PacketReportUltrasonicBatchTypeDef batch;
+            batch.count = HC_SR04_NUM;
+            memcpy(batch.distances, batch_distances, sizeof(batch_distances));
+            uart_packet_send(PKT_FUNC_ULTRASONIC, &batch, sizeof(batch));
+						if(poll_print_enabled){
+						     rt_kprintf("%s\n", round_buf);
+						}
         }
 				if (current_send_mode == SEND_MODE_PER_SENSOR && poll_print_enabled)
         {

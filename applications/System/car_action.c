@@ -15,12 +15,9 @@
 #include <board.h>
 
 /* 线程配置 */
-#define CAR_THREAD_STACK_SIZE  2048
+#define CAR_THREAD_STACK_SIZE  1024
 #define CAR_THREAD_PRIORITY    16
 #define CAR_SAFETY_CHECK_MS    50      /* 安全检测周期（ms）*/
-
-/* 阈值定义 */
-#define CLIFF_VOLTAGE_THRESHOLD_MV  500   /* 悬崖传感器电压低于此值视为悬崖（需根据实际标定）*/
 
 /* 辅助宏：将两个16位值组合成32位参数 */
 #define CAR_PACK_PARAM(low16, high16)  (((uint32_t)(high16) << 16) | ((uint32_t)(low16) & 0xFFFF))
@@ -43,10 +40,6 @@ static volatile rt_bool_t s_emergency_stop = RT_FALSE;
 static uint32_t s_last_vel_cmd_tick = 0;
 static rt_bool_t s_vel_in_safe_stop = RT_FALSE;  // 是否已执行零速锁定
 static rt_bool_t s_vel_in_free_stop = RT_FALSE;  // 是否已执行完全停车
-extern volatile rt_bool_t s_velocity_mode_ready;   // 来自 zltech_can_motor.c
-extern volatile rt_bool_t s_left_enabled;
-extern volatile rt_bool_t s_right_enabled;
-extern volatile rt_bool_t s_brake_released;
 
 /* 前向声明 */
 static void safety_check(void);
@@ -357,7 +350,7 @@ static void car_action_thread_entry(void *param)
 
 				        // ========== 速度指令超时保护 ==========
         // 仅在速度模式、电机使能且抱闸释放时才检查
-        if (s_velocity_mode_ready && s_left_enabled && s_right_enabled && s_brake_released) {
+        if (zlac_is_velocity_mode_ready() && zlac_is_left_enabled() && zlac_is_right_enabled() && zlac_is_brake_released()) {
             now = rt_tick_get_millisecond();
             // 如果从未收到过速度指令，忽略
             if (s_last_vel_cmd_tick != 0) {

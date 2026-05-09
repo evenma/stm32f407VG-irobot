@@ -143,7 +143,7 @@ rt_kprintf("tx_thread: s_tx_mq = %p\n", s_tx_mq);
 			/* 从消息队列中取待发送帧 */
 			  // 注意：rt_mq_recv 返回实际接收到的字节数，成功时等于 sizeof(frame)
         if (rt_mq_recv(s_tx_mq, &frame, sizeof(frame), RT_WAITING_FOREVER) == sizeof(frame)) {
-            rt_kprintf("tx_thread_entry: sending frame, len=%d\n", frame->data_len + 5);
+//            rt_kprintf("tx_thread_entry: sending frame, len=%d\n", frame->data_len + 5);
 					  /* 发送数据（使用阻塞发送）*/
             rt_device_write(s_uart_dev, 0, (uint8_t *)frame, frame->data_len + 5);
 					  /* 释放动态分配的帧内存（如果帧是动态申请的）*/
@@ -159,6 +159,10 @@ rt_kprintf("tx_thread: s_tx_mq = %p\n", s_tx_mq);
 /* ---------------------------- 发送接口 ---------------------------- */
 int uart_packet_send(uint8_t func, void *data, size_t data_len)
 {
+		if (s_frame_mp == RT_NULL) {
+			rt_kprintf("[UART_PKT] Memory pool not ready, drop packet\n");
+			return -RT_ERROR;
+	}
     if (data_len > 250) return -RT_EINVAL;  /* 最多 250 字节数据 + 校验和 */
 //    pkt_frame_t *frame = rt_malloc(sizeof(pkt_frame_t));
 	pkt_frame_t *frame = rt_mp_alloc(s_frame_mp, RT_WAITING_NO);  // 非阻塞分配 内存池

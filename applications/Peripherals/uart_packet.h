@@ -14,21 +14,23 @@
 
 /* 功能号枚举 */
 typedef enum {
-    PKT_FUNC_SYS        = 0,
+    PKT_FUNC_SYS        = 0,    //电池电压，充电状态，加热管电源,悬崖传感器，红外对射管
     PKT_FUNC_LED,
     PKT_FUNC_BUZZER,
-		PKT_FUNC_MOTOR,			//小车电机控制
+		PKT_FUNC_MOTOR,			//小车电机控制 以及上报 电机离线，故障，工作状态，实际速度，位置脉冲，温度
     PKT_FUNC_PWM_SERVO,
     PKT_FUNC_BUS_SERVO,
-    PKT_FUNC_KEY,
-    PKT_FUNC_IMU,
-    PKT_FUNC_GAMEPAD,
+		PKT_FUNC_KEY,					// 按键值上报 包括手控器按键和home键
+		PKT_FUNC_IMU,					// 7 姿态传感器上报
+		PKT_FUNC_GAMEPAD,     // 摇杆不在下位机，暂不支持
     PKT_FUNC_SBUS,
     PKT_FUNC_OLED,
     PKT_FUNC_RGB,
 	  PKT_FUNC_LIGHT,      //灯光控制
     PKT_FUNC_CHARGER,    //充电控制
-		PKT_FUNC_TOILET,    		 //智能马桶控制
+		PKT_FUNC_TOILET,    		 //e智能马桶控制 以及上报  水箱高低水位状态，水箱水温
+    PKT_FUNC_ULTRASONIC,   //f 超声波距离上报 
+		PKT_FUNC_VOICE,        // 语音模块信息上报 
     PKT_FUNC_NONE,
 } pkt_func_t;
 

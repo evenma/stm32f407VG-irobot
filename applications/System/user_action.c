@@ -14,7 +14,7 @@
 #include <stdio.h>
 
 /* ========== 邮箱和事件 ========== */
-#define ACTION_THREAD_STACK_SIZE     2048
+#define ACTION_THREAD_STACK_SIZE     1024
 #define ACTION_THREAD_PRIORITY       15
 
 static struct rt_mailbox s_action_mb;
@@ -51,7 +51,19 @@ static rt_timer_t s_report_timer;                 // 状态上报定时器
 static rt_timer_t s_status_timer = RT_NULL;
 static rt_bool_t s_status_timer_running = RT_FALSE;
 
+static uint16_t s_water_target_temp = 390;  // 默认 39.0°C
+
 /* ========== 动作执行辅助函数 ========== */
+void user_action_set_water_target_temp(uint16_t temp_0p1c)
+{
+    s_water_target_temp = temp_0p1c;
+}
+
+uint16_t user_action_get_water_target_temp(void)
+{
+    return s_water_target_temp;
+}
+
 /* 状态上报函数（可替换为实际通信） */
 static void report_work_status(void *param)
 {

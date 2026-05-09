@@ -494,6 +494,20 @@ static void packet_toilet_handle(pkt_frame_t *frame)
                 rt_kprintf("[TOILET] Invalid power %ld\n", param);
             }
             break;
+				case ACTION_SET_WATER_TEMP: {  /* 设置水温目标值 */
+						if (frame->data_len < 3) {
+								rt_kprintf("[TOILET] Set target temp cmd too short\n");
+								break;
+						}
+						uint16_t target_temp = data[1] | (data[2] << 8);
+						// 范围限制：30°C ~ 45°C（300 ~ 450）
+						if (target_temp < 300) target_temp = 300;
+						if (target_temp > 450) target_temp = 450;
+						user_action_set_water_target_temp(target_temp);
+						rt_kprintf("[TOILET] Water target temperature set to %d.%d°C\n",
+											 target_temp / 10, target_temp % 10);
+						break;
+				}
         case ACTION_SET_WARM_FAN:
             user_action_send_cmd(ACTION_SET_WARM_FAN, param ? 1 : 0);
             rt_kprintf("[TOILET] Warm fan %s\n", param ? "ON" : "OFF");

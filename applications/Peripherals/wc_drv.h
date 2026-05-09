@@ -83,6 +83,7 @@ void wc_warm_heater_set_power(rt_uint8_t power);
 /* ========== 水箱加热管 ========== */
 void wc_water_heater_on(void);
 void wc_water_heater_off(void);
+rt_bool_t wc_water_heater_is_on(void);
 
 /* ========== 圆形旋钮信号（非阻塞） ========== */
 typedef enum {

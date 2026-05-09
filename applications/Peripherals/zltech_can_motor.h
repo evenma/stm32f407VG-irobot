@@ -279,6 +279,14 @@ uint32_t zlac_get_fault_code(void);
 rt_err_t zlac_clear_fault(void);      
 /* 清除故障 (同 fault_reset) */
 
+/* 获取速度模式是否就绪 */
+rt_bool_t zlac_is_velocity_mode_ready(void);
+
+/* 获取左右电机使能状态 */
+rt_bool_t zlac_is_left_enabled(void);
+rt_bool_t zlac_is_right_enabled(void);
+rt_bool_t zlac_is_brake_released(void);
+
 /* Oled调用 */
 rt_err_t zlac_get_velocity_pid_kp(uint16_t *left_kp, uint16_t *right_kp);
 rt_err_t zlac_get_velocity_pid_ki(uint16_t *left_ki, uint16_t *right_ki);

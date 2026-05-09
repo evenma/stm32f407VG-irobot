@@ -37,6 +37,8 @@
 #include "buzzer.h"
 #include <string.h>
 #include "print_utils.h"
+#include "packet_reports.h"
+#include "uart_packet.h"
 /**
  * @brief Internal QMI8658 object instance
  */
@@ -61,7 +63,7 @@ static struct rt_semaphore s_data_ready_sem;
  * @brief IMU thread control
  */
 static struct rt_thread s_imu_thread;
-#define IMU_THREAD_STACK_SIZE     1024
+#define IMU_THREAD_STACK_SIZE     2048
 #define IMU_THREAD_PRIORITY       19
 static rt_uint8_t s_imu_thread_stack[IMU_THREAD_STACK_SIZE];
 
@@ -877,7 +879,8 @@ void qmi8658_imu_thread_entry(void* parameter)
     QmiDataDecoded_t data;
 		QmiDataRaw_t raw;
     static rt_uint32_t print_counter = 0;
-    
+		static uint8_t report_div = 0;   // 上报数据频率
+	
     rt_kprintf("[QMI8658] IMU thread started\n");
     
     while(1)
@@ -899,9 +902,24 @@ void qmi8658_imu_thread_entry(void* parameter)
 				s_latest_data.pitch = 0.0f;
         s_latest_data.roll  = 0.0f;
         s_latest_data.yaw   = 0.0f;
+				// 上报原始数据（加速度、陀螺仪）
+				PacketReportIMU_Raw_TypeDef pkt;
+				pkt.element.accel.x = s_latest_data.acc_x_g;
+				pkt.element.accel.y = s_latest_data.acc_y_g;
+				pkt.element.accel.z = s_latest_data.acc_z_g;
+				pkt.element.gyro.x  = s_latest_data.gyro_x_deg;
+				pkt.element.gyro.y  = s_latest_data.gyro_y_deg;
+				pkt.element.gyro.z  = s_latest_data.gyro_z_deg;
+				if (++report_div >= 250) {  // 250Hz / 3 ≈ 83Hz
+						report_div = 0;
+						uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt));
+				}
+//				uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt)); 发送太频繁了。调试不方便。暂时关闭
 			}else{
         qmi8658_read_once(RT_NULL, &data);			
 				s_latest_data = data;		
+//				PacketReportIMU_Quat_TypeDef pkt;  // 可扩展为欧拉角结构体
+//				uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt));
 			}
 			
         s_imu.interrupt_count++;
@@ -1108,7 +1126,6 @@ int qmi8658_init(void)
     rt_kprintf("  - INT2: Enabled on PB5\n");
     rt_kprintf("===========================================================\n\n");
 		
-    buzzer_beep_once();
     return RT_EOK;
 }
 

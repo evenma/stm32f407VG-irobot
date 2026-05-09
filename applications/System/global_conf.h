@@ -301,7 +301,8 @@ enum adc1_channel {
 #define CLIFF_FRONT_ADC           ADC1_CH7
 #define CLIFF_REAR_PIN            GET_PIN(C, 4)
 #define CLIFF_REAR_ADC            ADC1_CH14
-
+/* 阈值定义 */
+#define CLIFF_VOLTAGE_THRESHOLD_MV  400   /* 悬崖传感器电压低于此值视为悬崖（15cm处）*/
 
 /* ======================== 水温传感器配置 ======================== */
 
@@ -311,7 +312,11 @@ enum adc1_channel {
  */
 #define WATER_TEMP_PIN            GET_PIN(C, 5)
 #define WATER_TEMP_ADC            ADC1_CH15
-
+#define NTC_VCC_MV                5000            // 供电电压 5V
+#define NTC_SERIES_RESISTOR_OHM   22000           // 上拉电阻 22kΩ  
+#define NTC_R25_OHM               10000           // 25°C 时阻值 10kΩ
+#define NTC_B_CONSTANT            3950            // B 值 3950
+#define NTC_T0_KELVIN             298.15f         // 25°C = 298.15K
 
 /* ======================== 对射管充电对准配置 ======================== */
 
@@ -319,9 +324,9 @@ enum adc1_channel {
  * @brief 充电座对准红外对射管
  * PE13, PE14, PE15 = 三个接收管
  */
-#define CHARGER_ALIGN_PIN_1       GET_PIN(E, 13)
-#define CHARGER_ALIGN_PIN_2       GET_PIN(E, 14)
-#define CHARGER_ALIGN_PIN_3       GET_PIN(E, 15)
+#define IR_SENSOR1_PIN       GET_PIN(E, 13)
+#define IR_SENSOR2_PIN       GET_PIN(E, 14)
+#define IR_SENSOR3_PIN       GET_PIN(E, 15)
 
 
 /* ======================== 步进电机控制配置 ======================== */

@@ -37,6 +37,7 @@ typedef enum {
     ACTION_IR_LIGHT_ON,           // 红外灯开
     ACTION_IR_LIGHT_OFF,          // 红外灯关
 		ACTION_SELF_CLEAN,            // 自清洁
+		ACTION_SET_WATER_TEMP,				// 设置水箱温度值 (300-450) 单位0.1℃
 } ActionCmd_t;
 
 /* 动作执行过程中的事件（用于停止或超时） */
@@ -93,5 +94,8 @@ void cmd_set_pump_duty(int duty);
 /* 获取当前工作状态 */
 const WorkStatus_t* user_action_get_work_status(void);
 void user_action_sewage_pump(void);
+/* 水箱水温设定 单位0.1℃ */
+void user_action_set_water_target_temp(uint16_t temp_0p1c);
+uint16_t user_action_get_water_target_temp(void);
 #endif /* __USER_ACTION_H__ */
 

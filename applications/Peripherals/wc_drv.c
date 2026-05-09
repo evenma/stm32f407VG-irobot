@@ -13,6 +13,7 @@
 #include <board.h>  
 #include "user_action.h"
 
+static rt_bool_t s_water_heater_state = RT_FALSE;  // 默认关闭
 /* ========== 静态变量 ========== */
 static struct rt_device_pwm *s_small_pump_pwm = RT_NULL;
 static struct rt_adc_device *s_adc_dev = RT_NULL;
@@ -383,10 +384,17 @@ void wc_warm_heater_set_power(rt_uint8_t power)
 void wc_water_heater_on(void)
 {
     rt_pin_write(HEATER_CTRL_PIN, PIN_HIGH);
+	  s_water_heater_state = RT_TRUE;
 }
 void wc_water_heater_off(void)
 {
     rt_pin_write(HEATER_CTRL_PIN, PIN_LOW);
+	  s_water_heater_state = RT_FALSE;
+}
+
+rt_bool_t wc_water_heater_is_on(void)
+{
+    return s_water_heater_state;
 }
 
 

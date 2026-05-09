@@ -1,5 +1,6 @@
 #include <rtthread.h>
 #include <rtdevice.h>
+#include <math.h>   // 用于 logf 计算
 #include "monitor.h"
 #include "global_conf.h"
 #include "print_utils.h"
@@ -10,7 +11,31 @@
 #include <fal.h>
 #include "ultrasonic_485.h"
 #include "zltech_can_motor.h"
+#include "uart_packet.h"
+#include "packet_reports.h"
+#include "wc_drv.h"
+#include "user_action.h"
 
+// 温度-ADC 查找表 (温度: -5°C ~ 50°C, 步长 1°C)
+// ADC 值对应温度升高而递减
+static const int16_t temp_table[] = {
+	-50, -40, -30, -20, -10, 0, 10, 20, 30, 40,
+	50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 
+	150, 160, 170, 180, 190, 200, 210, 220, 230,240, 
+	250, 260, 270, 280, 290, 300, 310, 320,330, 340, 
+	350, 360, 370, 380, 390, 400, 410,420, 430, 440, 
+	450, 460, 470, 480, 490, 500
+};
+static const uint16_t adc_table[] = {
+	4095,4061,3984,3907,3829,3750,3672,3593,3514,3435,
+	3356,3278,3200,3122,3045,2968,2892,2817,2743,2669,
+	2597,2526,2455,2386,2319,2252,2187,2123,2060,1999,
+	1939,1880,1823,1767,1713,1660,1609,1558,1510,1462,
+	1416,1371,1328,1285,1245,1205,1166,1129,1093,1058,
+	1024,991,959,929,899,870
+};
+#define ADC_TABLE_SIZE  (sizeof(adc_table) / sizeof(adc_table[0]))
+	
 static const char *DATA_PARTITION_NAME = "data";  // 与分区表名称一致
 static uint32_t s_loaded_ultrasonic_baudrate = 0; 
 
@@ -19,7 +44,7 @@ extern int g_oled_battery_mv;
 extern int g_charge_power_mw;
 
 /* ========== Thread Configuration ========== */
-#define MONITOR_THREAD_STACK_SIZE   1024
+#define MONITOR_THREAD_STACK_SIZE   2048
 #define MONITOR_THREAD_PRIORITY     18
 
 #define MONITOR_SAMPLE_INTERVAL_MS  50          /* 采样间隔 50ms */
@@ -82,6 +107,23 @@ static const struct fal_partition * data_part = RT_NULL;
 
 static rt_bool_t s_water_high_level = RT_FALSE;   // 高水位状态
 static rt_bool_t s_water_low_level  = RT_FALSE;   // 低水位状态
+
+static uint8_t last_low_battery = 0;
+
+// 以下用于事件触发上报（变化时才发送）
+static uint8_t last_charger_event = 0xFF;  // 0:断开,1:连接未充,2:充电中
+static uint8_t last_heater_present = 0xFF; // 0:断开,1:连接
+static uint8_t last_cliff_trigger = 0xFF;  // 0:无悬崖,1:有悬崖
+static uint8_t last_ir_mask = 0xFF;        // 红外对射管状态掩码
+static uint8_t last_water_high = 0xFF;     // 高水位状态
+static uint8_t last_water_low = 0xFF;      // 低水位状态
+static uint16_t last_battery_mv_report = 0;// 用于定时上报电池电压
+static uint8_t charger_event = 0;
+static uint8_t charger_connected = 0;
+
+// 水温上报定时计数器（每5秒一次）
+static uint32_t water_temp_report_cnt = 0;
+
 /**
  * @brief 保存校准数据到 Flash 分区
  */
@@ -231,9 +273,9 @@ static void adc_read_all_channels(rt_uint32_t *battery_raw,
     rt_adc_disable(s_adc_dev, ADC1_CH5);
 	    
 		// 充电采样通道 (PA4, ADC1_CH4)
-    rt_adc_enable(s_adc_dev, 4);
+    rt_adc_enable(s_adc_dev, ADC1_CH4);
     *charger_sample_raw = rt_adc_read(s_adc_dev, ADC1_CH4);
-    rt_adc_disable(s_adc_dev, 4);
+    rt_adc_disable(s_adc_dev, ADC1_CH4);
 
     // 加热器检测通道 (PA6, ADC1_CH6)
     rt_adc_enable(s_adc_dev, ADC1_CH6);
@@ -245,6 +287,153 @@ static void adc_read_all_channels(rt_uint32_t *battery_raw,
     *vrefint_raw = rt_adc_read(s_adc_dev, ADC1_CH17);
     rt_adc_disable(s_adc_dev, ADC1_CH17);
 }
+
+void read_cliff_sensor(uint16_t *front_mv, uint16_t *rear_mv, rt_bool_t *trigger)
+{
+    // 读取前悬崖电压
+    rt_adc_enable(s_adc_dev, CLIFF_FRONT_ADC);
+    rt_uint32_t raw_front = rt_adc_read(s_adc_dev, CLIFF_FRONT_ADC);
+    rt_adc_disable(s_adc_dev, CLIFF_FRONT_ADC);
+    // 粗略转换为 mV（假设 VDDA=3300mV，实际可用校准值）
+    *front_mv = (uint16_t)adc_raw_to_mv(raw_front);
+
+    // 读取后悬崖电压
+    rt_adc_enable(s_adc_dev, CLIFF_REAR_ADC);
+    rt_uint32_t raw_rear = rt_adc_read(s_adc_dev, CLIFF_REAR_ADC);
+    rt_adc_disable(s_adc_dev, CLIFF_REAR_ADC);
+    *rear_mv = (uint16_t)adc_raw_to_mv(raw_rear);
+
+    // 阈值判断（与 car_action 中一致）
+    *trigger = (*front_mv < CLIFF_VOLTAGE_THRESHOLD_MV || *rear_mv < CLIFF_VOLTAGE_THRESHOLD_MV);
+}
+
+static uint8_t read_ir_sensors(void)
+{
+    uint8_t mask = 0;
+    if (rt_pin_read(IR_SENSOR1_PIN) == PIN_LOW) mask |= 0x01;
+    if (rt_pin_read(IR_SENSOR2_PIN) == PIN_LOW) mask |= 0x02;
+    if (rt_pin_read(IR_SENSOR3_PIN) == PIN_LOW) mask |= 0x04;
+    return mask;
+}
+
+/**
+ * @brief 通过二分查找和线性插值获取温度
+ * @param adc_value ADC 原始读数
+ * @return 温度值，单位 0.1°C
+ */
+static int16_t lookup_temperature(uint16_t adc_value)
+{
+    // 边界检查
+    if (adc_value >= adc_table[0]) {
+        // 温度最低，返回 -5°C
+        return temp_table[0];
+    }
+    if (adc_value <= adc_table[ADC_TABLE_SIZE - 1]) {
+        // 温度最高，返回 50°C
+        return temp_table[ADC_TABLE_SIZE - 1];
+    }
+
+    // 二分查找找到所在区间
+    uint8_t left = 0, right = ADC_TABLE_SIZE - 1;
+    while (right - left > 1) {
+        uint8_t mid = (left + right) / 2;
+      // 关键：因为数组递减，若目标 adc 大于等于中间值，说明温度低于 mid 对应的温度，应在左半区间
+        if (adc_value >= adc_table[mid])
+            right = mid;      // 向左半区间移动
+        else
+            left = mid;       // 向右半区间移动
+    }
+
+    // 线性插值
+    int16_t temp_left = temp_table[left];
+    int16_t temp_right = temp_table[right];
+    uint16_t adc_left = adc_table[left];
+    uint16_t adc_right = adc_table[right];
+    // ADC 值下降对应温度上升，插值公式：
+    // temperature = temp_left + (temp_right - temp_left) * (adc_value - adc_left) / (adc_right - adc_left)
+    int32_t diff = (int32_t)(temp_right - temp_left) * (adc_value - adc_left) / (adc_right - adc_left);
+    return temp_left + diff;
+}
+
+int16_t wc_get_water_temperature(void)
+{
+    static rt_adc_device_t adc_dev = RT_NULL;
+    rt_uint32_t raw;
+
+    if (adc_dev == RT_NULL) {
+        adc_dev = (rt_adc_device_t)rt_device_find(ADC_DEV_NAME);
+        if (adc_dev == RT_NULL) {
+            rt_kprintf("[WATER_TEMP] ADC device not found\n");
+            return -32768;
+        }
+    }
+
+    if (rt_adc_enable(adc_dev, WATER_TEMP_ADC) != RT_EOK) {
+        rt_kprintf("[WATER_TEMP] Enable ADC channel failed\n");
+        return -32768;
+    }
+    raw = rt_adc_read(adc_dev, WATER_TEMP_ADC);
+    rt_adc_disable(adc_dev, WATER_TEMP_ADC);
+		int mv = (int)((uint64_t)raw * 3300 / 4095);
+//		rt_kprintf("water raw=%d voltage=%d mV\n",  raw,mv);
+    // 查表得到温度（单位 0.1°C）
+    return lookup_temperature((uint16_t)raw);
+}
+
+/**
+ * @brief 读取 NTC 水温传感器的温度   开尔文计算法 运算量大
+ * @return 温度值，单位 0.1°C；若读取失败返回 -32768
+ */
+int16_t wc_get_water_temperature_by_KELV(void)
+{
+    static rt_adc_device_t adc_dev = RT_NULL;
+    rt_uint32_t raw;
+    float v_ntc_mv, r_ntc;
+    float temp_k, temp_c;
+
+    // 获取 ADC 设备（只需查找一次）
+    if (adc_dev == RT_NULL) {
+        adc_dev = (rt_adc_device_t)rt_device_find(ADC_DEV_NAME);
+        if (adc_dev == RT_NULL) {
+            rt_kprintf("[WATER_TEMP] ADC device not found\n");
+            return -32768;
+        }
+    }
+
+    // 使能通道并读取原始值
+    if (rt_adc_enable(adc_dev, WATER_TEMP_ADC) != RT_EOK) {
+        rt_kprintf("[WATER_TEMP] Enable ADC channel failed\n");
+        return -32768;
+    }
+    raw = rt_adc_read(adc_dev, WATER_TEMP_ADC);
+    rt_adc_disable(adc_dev, WATER_TEMP_ADC);
+
+    
+    v_ntc_mv = adc_raw_to_mv(raw);
+
+    // 计算 NTC 阻值 (欧姆)
+    // 电路: VCC -- R_series -- NTC -- GND, ADC 测 NTC 两端电压
+    // 公式: V_ntc = VCC * (R_ntc / (R_series + R_ntc))
+    // 推导: R_ntc = (V_ntc * R_series) / (VCC - V_ntc)
+    if (v_ntc_mv >= NTC_VCC_MV) {
+        // 电压异常，可能断路或 ADC 饱和
+        return -32768;
+    }
+    r_ntc = (v_ntc_mv * NTC_SERIES_RESISTOR_OHM) / (NTC_VCC_MV - v_ntc_mv);
+
+    // 使用 B 值公式计算温度
+    // 1/T = 1/T0 + (1/B) * ln(R/R0)
+    // T 单位为开尔文
+    float ln_r_ratio = logf(r_ntc / NTC_R25_OHM);
+    temp_k = 1.0f / (1.0f / NTC_T0_KELVIN + ln_r_ratio / NTC_B_CONSTANT);
+    temp_c = temp_k - 273.15f;
+
+    // 限幅到合理范围（-20°C ~ 100°C），并转换为 0.1°C 整数返回
+    if (temp_c < -20.0f) temp_c = -20.0f;
+    if (temp_c > 100.0f) temp_c = 100.0f;
+    return (int16_t)(temp_c * 10.0f);
+}
+
 
 /* ========== Monitor Thread ========== */
 static void monitor_thread_entry(void *parameter)
@@ -258,7 +447,26 @@ static void monitor_thread_entry(void *parameter)
     rt_bool_t low_level  = RT_FALSE;	
     s_filter_buf.index = 0;
     s_filter_buf.ready = 0;
+
+		static uint32_t pos_report_cnt = 0;
+		static uint32_t temp_report_cnt = 0;
+		static PacketReportMotorVelocityTypeDef vel_pkt = {.sub_cmd = MOTOR_SUB_VELOCITY_STATUS};
+		static PacketReportMotorPositionTypeDef pos_pkt = {.sub_cmd = MOTOR_SUB_POSITION};
+		static PacketReportMotorTemperatureTypeDef temp_pkt = {.sub_cmd = MOTOR_SUB_TEMPERATURE};	
 		
+		static uint32_t battery_report_cnt = 0;
+		static PacketReportBatteryVoltageTypeDef bat_pkt = {.sub_cmd = SYS_SUB_BATTERY_EVENT};
+		static PacketReportChargerEventTypeDef charge_pkt = {.sub_cmd = SYS_SUB_CHARGER_EVENT};
+		static PacketReportHeaterEventTypeDef heat_pkt = {.sub_cmd = SYS_SUB_HEATER_EVENT};			
+		static PacketReportCliffTypeDef cliff_pkt = {.sub_cmd = SYS_SUB_CLIFF};			
+		static PacketReportIRSwitchTypeDef ir_pkt = {.sub_cmd = SYS_SUB_IR_SWITCH};	
+		
+		uint8_t heater_present;		
+		uint16_t front_mv, rear_mv;
+		rt_bool_t cliff_trigger;
+		uint8_t trigger_val;
+		uint8_t ir_mask;
+ 
 		rt_thread_mdelay(5000);    // 等待系统启动稳定后开启
 
     while (1)
@@ -393,7 +601,6 @@ static void monitor_thread_entry(void *parameter)
 						s_water_high_level = high_level;
 						s_water_low_level  = low_level;
 						
-
             // 打印（调试）
             s_print_cnt++;
             if (s_monitor_print_enabled && s_print_cnt >= PRINT_INTERVAL) {
@@ -436,31 +643,128 @@ static void monitor_thread_entry(void *parameter)
 					led_flush();	// led指示灯容易受到干扰，定期重新刷新	
 				}
 				led_counter++;
+				// 电机位置上报（每 20 个周期上报一次，MONITOR_SAMPLE_INTERVAL_MS=50ms → 1s）
+				pos_report_cnt++;
+				if (pos_report_cnt >= 20) {
+						pos_report_cnt = 0;
+						zlac_get_position(&pos_pkt.left_pos_pulse, &pos_pkt.right_pos_pulse);
+						uart_packet_send(PKT_FUNC_MOTOR, &pos_pkt, sizeof(pos_pkt));
+				}
+
+				// 电机温度上报（每 100 个周期上报一次 → 5s）
+				temp_report_cnt++;
+				if (temp_report_cnt >= 100) {
+						temp_report_cnt = 0;
+						temp_pkt.left_temp_c = zlac_get_motor_temp_left();
+						temp_pkt.right_temp_c = zlac_get_motor_temp_right();
+						temp_pkt.driver_temp_c = zlac_get_driver_temp();
+						uart_packet_send(PKT_FUNC_MOTOR, &temp_pkt, sizeof(temp_pkt));
+				}
 				
-//				show_monitor_once();
-//		if (!s_motor_obj.initialized)
-//    {
-//        return -RT_ERROR;
-//    }
+				if (zlac_is_velocity_mode_ready() && zlac_is_left_enabled() && zlac_is_right_enabled())
+				{
+						// 1. 速度+状态（每 50ms 上报一次）
+						zlac_get_velocity(&vel_pkt.left_vel_rpm, &vel_pkt.right_vel_rpm);
+						vel_pkt.left_enabled = zlac_is_left_enabled();
+						vel_pkt.right_enabled = zlac_is_right_enabled();
+						vel_pkt.left_running = (zlac_get_motor_status_left() != 0);
+						vel_pkt.right_running = (zlac_get_motor_status_right() != 0);
+						uart_packet_send(PKT_FUNC_MOTOR, &vel_pkt, sizeof(vel_pkt));
+				}	
 
-//    result = canopen_motor_read_status();
-//    if (result != RT_EOK) return result;
+				// 水箱水位状态（变化触发）	
+				if (high_level != last_water_high || low_level != last_water_low) {
+						last_water_high = high_level;
+						last_water_low = low_level;
+						PacketReportWaterLevelTypeDef water_pkt;
+						water_pkt.sub_cmd = TOILET_SUB_WATER_LEVEL;
+						water_pkt.high_level = high_level;
+						water_pkt.low_level = low_level;
+						uart_packet_send(PKT_FUNC_TOILET, &water_pkt, sizeof(water_pkt));
+				}				
 
-//    result = canopen_motor_read_velocity();
-//    if (result != RT_EOK) return result;
+				// 红外对射管 变化触发  红外对射管在回充电桩过程中高频触发，平时不用读取
+//				ir_mask = read_ir_sensors();
+//				if (ir_mask != last_ir_mask) {
+//						last_ir_mask = ir_mask;
+//						ir_pkt.state_mask = ir_mask;
+//						uart_packet_send(PKT_FUNC_SYS, &ir_pkt, sizeof(ir_pkt));
+//				}	
 
-//    s_service_divider++;
-//    if ((s_service_divider % 10U) == 0U)
-//    {
-//        canopen_motor_read_fault();
-//        canopen_motor_read_bus_voltage();
-//    }
-//    if ((s_service_divider % 20U) == 0U)
-//    {
-//        canopen_motor_read_temperature();
-//        canopen_motor_read_position();
-//    }
-				
+//				// 电池电压上报（每10秒一次，避免频繁）
+				battery_report_cnt++;
+				if (battery_report_cnt >= 200) { // 50ms * 200 = 10秒
+						battery_report_cnt = 0;
+						bat_pkt.voltage = s_battery_mv;
+						bat_pkt.event = (s_battery_mv <= BATTERY_LOW_ALARM_MV || s_battery_mv < battery_min_limit) ? 1 : 0;
+						uart_packet_send(PKT_FUNC_SYS, &bat_pkt, sizeof(bat_pkt));
+				}
+//				// 充电上报 变化触发
+				charger_connected = (s_charger_mv > 5000);
+				if (charger_connected && rt_pin_read(CHARGER_CONTROL_PIN) == PIN_HIGH && s_charge_power_mw > 0) {
+						charger_event = 2; // 充电中
+				} else if (charger_connected) {
+						charger_event = 1; // 连接未充电
+				} else {
+						charger_event = 0; // 断开
+				}
+				if (charger_event != last_charger_event) {
+						last_charger_event = charger_event;
+						charge_pkt.event = charger_event;
+						charge_pkt.voltage_mv = s_charger_mv;
+						charge_pkt.power_mw = s_charge_power_mw;
+						uart_packet_send(PKT_FUNC_SYS, &charge_pkt, sizeof(charge_pkt));
+				}
+//				// 加热管电源对连接的判断  变化触发上报
+				heater_present = (s_heater_mv > 5000) ? 1 : 0;
+				if (heater_present != last_heater_present) {
+						last_heater_present = heater_present;
+						heat_pkt.event = heater_present;
+						heat_pkt.voltage_mv = s_heater_mv;
+						uart_packet_send(PKT_FUNC_SYS, &heat_pkt, sizeof(heat_pkt));
+				}
+//				//悬崖传感器上报 周期检测并变化触发
+				read_cliff_sensor(&front_mv, &rear_mv, &cliff_trigger);
+//				rt_kprintf("cliff front %dmv,rear %dmv,trig %d\n",front_mv,rear_mv,cliff_trigger);
+				trigger_val = cliff_trigger ? 1 : 0;
+				if (trigger_val != last_cliff_trigger) {
+						last_cliff_trigger = trigger_val;
+						cliff_pkt.cliff_trigger = trigger_val;
+						cliff_pkt.front_mv = front_mv;
+						cliff_pkt.rear_mv = rear_mv;
+						uart_packet_send(PKT_FUNC_SYS, &cliff_pkt, sizeof(cliff_pkt));
+				}
+				//水温加热以及（周期上报，每5秒）
+				water_temp_report_cnt++;
+				if (water_temp_report_cnt >= 100) { // 50ms*100 = 5s
+						water_temp_report_cnt = 0;
+										
+						int16_t water_temp = wc_get_water_temperature();
+					// 读取到水温，判断加热管供电是否连接，设定阀值39℃，低于阀值-2℃再次加热，避免频繁加热，可以保持在37-39℃。
+	//					rt_kprintf("water T=%d \n",water_temp);
+					if (water_temp != -32768) {
+									// 上报数据
+									PacketReportWaterTempTypeDef temp_pkt;
+									temp_pkt.sub_cmd = TOILET_SUB_WATER_TEMP;
+									temp_pkt.temperature_c = water_temp;
+									uart_packet_send(PKT_FUNC_TOILET, &temp_pkt, sizeof(temp_pkt));
+
+									// 获取当前水温目标值
+									uint16_t target_temp = user_action_get_water_target_temp();
+									uint16_t low_temp = target_temp - 20;   // 低于目标 2°C 开启加热
+									uint16_t high_temp = target_temp;       // 达到目标即关闭
+						 
+									// 恒温控制：仅在加热器电源连接时执行
+									if (s_heater_mv > 5000) {   // 加热器电源已连接												
+										if (water_temp < low_temp && !wc_water_heater_is_on()) {
+												wc_water_heater_on();
+										} else if (water_temp >= target_temp && wc_water_heater_is_on()) {
+												wc_water_heater_off();
+										}
+									}
+							}
+				}				
+								
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
 }
@@ -507,6 +811,10 @@ void monitor_init(void)
 {
     rt_err_t ret;
 
+	rt_pin_mode(IR_SENSOR1_PIN, PIN_MODE_INPUT);
+	rt_pin_mode(IR_SENSOR2_PIN, PIN_MODE_INPUT);
+	rt_pin_mode(IR_SENSOR3_PIN, PIN_MODE_INPUT);
+	
     /* 查找 ADC 设备 */
     s_adc_dev = (rt_adc_device_t)rt_device_find(ADC_DEV_NAME);
     if (s_adc_dev == RT_NULL) {
@@ -519,6 +827,8 @@ void monitor_init(void)
     if (ret != RT_EOK) rt_kprintf("[MONITOR] Enable battery ADC failed\n");
     ret = rt_adc_enable(s_adc_dev, CHARGER_DETECT_ADC);
     if (ret != RT_EOK) rt_kprintf("[MONITOR] Enable charger ADC failed\n");
+		ret = rt_adc_enable(s_adc_dev, CHARGER_SAMPLE_ADC);
+		if (ret != RT_EOK) rt_kprintf("[MONITOR] Enable charger sample ADC failed\n");
     ret = rt_adc_enable(s_adc_dev, HEATER_DETECT_ADC);
     if (ret != RT_EOK) rt_kprintf("[MONITOR] Enable heater ADC failed\n");
     ret = rt_adc_enable(s_adc_dev, ADC1_CH17);  /* 内部参考电压通道 */
@@ -563,18 +873,30 @@ void monitor_init(void)
 #ifdef RT_USING_MSH
 #include <stdlib.h>
 
+static void set_water_temp(int argc, char **argv)
+{
+    if (argc < 2) {
+        rt_kprintf("Usage: set_water_temp <temp_0p1c>\n");
+        return;
+    }
+    uint16_t temp = atoi(argv[1]);
+    user_action_set_water_target_temp(temp);
+    rt_kprintf("Water target temp set to %d.%d°C\n", temp/10, temp%10);
+}
+MSH_CMD_EXPORT(set_water_temp, "set water target temperature (0.1°C)");
+
 /* 通道名称映射（根据 STM32F407 引脚定义）*/
 static const char* channel_name[] = {
-    [4]  = "CH4 (PA4)",
-    [5]  = "CH5 (PA5)",
-    [6]  = "CH6 (PA6)",
-    [7]  = "CH7 (PA7)",
-    [10] = "CH10 (PC0)",
-    [11] = "CH11 (PC1)",
-    [12] = "CH12 (PC2)",
-    [13] = "CH13 (PC3)",
-    [14] = "CH14 (PC4)",
-    [15] = "CH15 (PC5)",
+    [4]  = "CH4 (PA4) CHARGER_SAMPLE_ADC ",
+    [5]  = "CH5 (PA5) CHARGER_DETECT_ADC",
+    [6]  = "CH6 (PA6) HEATER_DETECT_ADC",
+    [7]  = "CH7 (PA7) CLIFF_FRONT_ADC",
+    [10] = "CH10 (PC0)SEWAGE_MOTOR_POS_ADC",
+    [11] = "CH11 (PC1)RING_MOTOR_POS_ADC",
+    [12] = "CH12 (PC2)LID_MOTOR_POS_ADC",
+    [13] = "CH13 (PC3)BATTERY_ADC_CHANNEL",
+    [14] = "CH14 (PC4)CLIFF_REAR_ADC",
+    [15] = "CH15 (PC5)WATER_TEMP_ADC",
     [17] = "CH17 (VREFINT)",
 };
 
@@ -620,7 +942,7 @@ static void adc_scan(int argc, char** argv)
         } else {
             /* 电压(mV) = raw * vdda_mv / 4095 */
             int mv = (int)((uint64_t)raw * vdda_mv / 4095);
-            rt_kprintf("%-12s raw=%-5lu voltage=%d mV\n", channel_name[ch], raw, mv);
+            rt_kprintf("%-30s raw=%-5lu voltage=%d mV\n", channel_name[ch], raw, mv);
         }
     }
 }

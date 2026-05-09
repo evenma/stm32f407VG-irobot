@@ -52,12 +52,13 @@ int main(void)
 	LOG_I("The current version of APP fireware is iBed-body-V%s\n",APP_VERSION);
 	rt_kprintf("/****************************************************/\n");
 
+	uart_packet_init();  // 上下位机串口协议初始化
+	packet_handle_init();
+	
 	oled_handle_init();  // oled,led公用spi 顺序不能掉换
 	led_init();
 	led_off_all();
 	
-	monitor_init();   // 优先初始化，因为读取data分区参数设置
-
 	button_init();
 	buzzer_init();
 
@@ -71,10 +72,9 @@ int main(void)
 	user_action_init();
 	car_action_init();
 	
-	uart_packet_init();  // 上下位机串口协议初始化
-	packet_handle_init();
+	monitor_init();   // 优先初始化，因为读取data分区参数设置	
 	
-	
+	buzzer_beep_once();  // 初始化完毕，蜂鸣一次
     while (1)
     {
 //        rt_pin_write(LED0_PIN, PIN_HIGH);

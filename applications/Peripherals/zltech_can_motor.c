@@ -23,11 +23,13 @@
 #include "zltech_can_motor.h"
 #include <string.h>
 #include <stdlib.h>
+#include "packet_reports.h"
+#include "uart_packet.h"
 
-volatile rt_bool_t s_velocity_mode_ready = RT_FALSE;
-volatile rt_bool_t s_brake_released = RT_FALSE;      // 刹车是否已释放
-volatile rt_bool_t s_left_enabled = RT_FALSE;        // 左电机使能状态
-volatile rt_bool_t s_right_enabled = RT_FALSE;       // 右电机使能状态
+static volatile rt_bool_t s_velocity_mode_ready = RT_FALSE;
+static volatile rt_bool_t s_brake_released = RT_FALSE;      // 刹车是否已释放
+static volatile rt_bool_t s_left_enabled = RT_FALSE;        // 左电机使能状态
+static volatile rt_bool_t s_right_enabled = RT_FALSE;       // 右电机使能状态
 
 /* ======================== 内部数据结构 ======================== */
 static rt_device_t s_can_dev = RT_NULL;
@@ -105,7 +107,25 @@ static const struct {
 static rt_thread_t s_monitor_print_thread = RT_NULL;
 static rt_bool_t s_monitor_print_run = RT_FALSE;
 /* ======================== 辅助函数 ======================== */
+rt_bool_t zlac_is_velocity_mode_ready(void)
+{
+    return s_velocity_mode_ready;
+}
 
+rt_bool_t zlac_is_left_enabled(void)
+{
+    return s_left_enabled;
+}
+
+rt_bool_t zlac_is_right_enabled(void)
+{
+    return s_right_enabled;
+}
+
+rt_bool_t zlac_is_brake_released(void)
+{
+    return s_brake_released;
+}
 
 /* 发送 CAN 帧 */
 static rt_err_t can_send(uint32_t id, uint8_t *data, uint8_t len, rt_bool_t nonblocking)
@@ -1753,8 +1773,11 @@ static void zlac_recover_communication(void)
 
 void zlac_check_heartbeat(void)
 {
+	static uint8_t last_online = 0;
+	static uint32_t last_fault = 0;
+	uint32_t fault = zlac_get_fault_code();
 	static uint32_t last_probe = 0;
-	    uint32_t now = rt_tick_get_millisecond();
+	uint32_t now = rt_tick_get_millisecond();
 //    if (s_last_hb_tick == 0) return;
 //    if (now - s_last_hb_tick > ZLAC_HEARTBEAT_TIMEOUT_MS) {
 //        if (s_online) {
@@ -1793,7 +1816,7 @@ void zlac_check_heartbeat(void)
             }
         }
     }
-    
+				    
     // 可选：保留原有心跳检测（如果驱动器能正常发送心跳）
     if (s_last_hb_tick != 0) {
         if (now - s_last_hb_tick > ZLAC_HEARTBEAT_TIMEOUT_MS && s_online) {
@@ -1805,6 +1828,23 @@ void zlac_check_heartbeat(void)
             }
         }
     }
+		
+		// 发送故障码
+		if (fault != last_fault) {
+				last_fault = fault;
+				PacketReportMotorFaultTypeDef pkt;
+				pkt.sub_cmd = MOTOR_SUB_FAULT;
+				pkt.fault_code = fault;
+				uart_packet_send(PKT_FUNC_MOTOR, &pkt, sizeof(pkt));
+		}
+		// 发送在线/离线
+		if (s_online != last_online) {
+				last_online = s_online;
+				PacketReportMotorOnlineTypeDef pkt;
+				pkt.sub_cmd = MOTOR_SUB_ONLINE;
+				pkt.online = s_online;
+				uart_packet_send(PKT_FUNC_MOTOR, &pkt, sizeof(pkt));
+		}
 }
 
 rt_bool_t zlac_is_online(void)

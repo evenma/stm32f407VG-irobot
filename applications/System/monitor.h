@@ -54,6 +54,9 @@ rt_uint32_t monitor_get_charger_sample_voltage(void);
 rt_uint32_t monitor_get_heater_voltage(void);
 
 void change_battery_limit(uint16_t limit);
+void read_cliff_sensor(uint16_t *front_mv, uint16_t *rear_mv, rt_bool_t *trigger);
+int16_t wc_get_water_temperature(void);
+
 /**
  * @brief Initialize monitoring system (creates a thread to periodically read ADC)
  */
