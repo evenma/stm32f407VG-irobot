@@ -38,6 +38,7 @@ typedef enum {
     ACTION_IR_LIGHT_OFF,          // 红外灯关
 		ACTION_SELF_CLEAN,            // 自清洁
 		ACTION_SET_WATER_TEMP,				// 设置水箱温度值 (300-450) 单位0.1℃
+		ACTION_SET_WATER_HEATER_AUTO,   // 设置自动加热开关（参数：0=关闭，1=开启）
 } ActionCmd_t;
 
 /* 动作执行过程中的事件（用于停止或超时） */
