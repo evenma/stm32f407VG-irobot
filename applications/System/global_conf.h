@@ -328,6 +328,8 @@ enum adc1_channel {
 #define IR_SENSOR2_PIN       GET_PIN(E, 14)
 #define IR_SENSOR3_PIN       GET_PIN(E, 15)
 
+#define IR_SENSOR_LEFT_PIN   GET_PIN(E, 13)   // 左接收管
+#define IR_SENSOR_RIGHT_PIN  GET_PIN(E, 14)   // 右接收管（若有两个）
 
 /* ======================== 步进电机控制配置 ======================== */
 

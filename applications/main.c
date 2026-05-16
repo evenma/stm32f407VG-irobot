@@ -21,15 +21,16 @@
 #include "monitor.h"
 #include "user_action.h"
 #include "global_conf.h"
-#ifdef ULTRASONIC_GPIO
+//#ifdef ULTRASONIC_GPIO
 #include "ultrasonic_hc_sr04.h"
-#elif defined(ULTRASONIC_485)
+//#elif defined(ULTRASONIC_485)
 #include "ultrasonic_485.h"
-#endif
+//#endif
 #include "zltech_can_motor.h"
 #include "uart_packet.h"
 #include "packet_handle.h"
 #include "car_action.h"
+#include "irm_8601m2.h"
 
 #define LOG_TAG "main.tag"
 #define LOG_LVL LOG_LVL_DBG
@@ -61,12 +62,13 @@ int main(void)
 	
 	button_init();
 	buzzer_init();
+	irm_8601m2_init();
 
-#ifdef ULTRASONIC_GPIO
+//#ifdef ULTRASONIC_GPIO
     hc_sr04_init();
-#elif defined(ULTRASONIC_485)
+//#elif defined(ULTRASONIC_485)
     ultrasonic_485_init();
-#endif
+//#endif
 	zlac_motor_init();
 	qmi8658_init(); 
 	user_action_init();

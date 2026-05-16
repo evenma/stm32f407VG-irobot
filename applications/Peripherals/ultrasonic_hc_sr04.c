@@ -337,10 +337,12 @@ static void poll_entry(void *parameter)
             if (current_send_mode == SEND_MODE_PER_SENSOR)
             {
                 /* 立即发送单个传感器数据 */
-							  PacketReportUltrasonicSingleTypeDef single;
+#ifdef ULTRASONIC_GPIO		
+								PacketReportUltrasonicSingleTypeDef single;
                 single.sensor_id = i;
                 single.distance_mm = (ret == RT_EOK) ? dist_mm : 0xFFFFFFFF; // 0xFFFFFFFF 表示无效
                 uart_packet_send(PKT_FUNC_ULTRASONIC, &single, sizeof(single));
+#endif							
                 if (ret == RT_EOK)
                 {
                     rt_snprintf(single_buf, sizeof(single_buf), "S%d=%dmm\n", i, dist_mm);
@@ -370,10 +372,12 @@ static void poll_entry(void *parameter)
         }
         // 批量模式：一轮结束后发送所有数据
         if (current_send_mode == SEND_MODE_PER_ROUND) {
+#ifdef ULTRASONIC_GPIO							
             PacketReportUltrasonicBatchTypeDef batch;
             batch.count = HC_SR04_NUM;
             memcpy(batch.distances, batch_distances, sizeof(batch_distances));
             uart_packet_send(PKT_FUNC_ULTRASONIC, &batch, sizeof(batch));
+#endif					
 						if(poll_print_enabled){
 						     rt_kprintf("%s\n", round_buf);
 						}

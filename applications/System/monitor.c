@@ -15,6 +15,7 @@
 #include "packet_reports.h"
 #include "wc_drv.h"
 #include "user_action.h"
+#include "irm_8601m2.h"
 
 // 温度-ADC 查找表 (温度: -5°C ~ 50°C, 步长 1°C)
 // ADC 值对应温度升高而递减
@@ -35,6 +36,11 @@ static const uint16_t adc_table[] = {
 	1024,991,959,929,899,870
 };
 #define ADC_TABLE_SIZE  (sizeof(adc_table) / sizeof(adc_table[0]))
+	// NTC 校准参数：每个校准点对应一个理论温度（℃）和测量的实际温度（℃）
+#define NTC_CALIB_POINTS 4
+static const float calib_theory[NTC_CALIB_POINTS] = {30.0f, 35.0f, 40.0f, 45.0f}; // 校准点的理论温度
+static float calib_actual[NTC_CALIB_POINTS] = {30.0f, 35.0f, 40.0f, 45.0f};       // 实际测量温度（初始等于理论）
+static rt_bool_t calib_initialized = RT_FALSE;
 	
 static const char *DATA_PARTITION_NAME = "data";  // 与分区表名称一致
 static uint32_t s_loaded_ultrasonic_baudrate = 0; 
@@ -123,6 +129,9 @@ static uint8_t charger_connected = 0;
 
 // 水温上报定时计数器（每5秒一次）
 static uint32_t water_temp_report_cnt = 0;
+
+static uint32_t ir_timeout_cnt = 0;  // 红外接收管超时未上报
+static uint8_t last_left_match = 0, last_right_match = 0;
 
 /**
  * @brief 保存校准数据到 Flash 分区
@@ -355,7 +364,7 @@ static int16_t lookup_temperature(uint16_t adc_value)
     return temp_left + diff;
 }
 
-int16_t wc_get_water_temperature(void)
+int16_t wc_get_water_temperature_by_table(void)
 {
     static rt_adc_device_t adc_dev = RT_NULL;
     rt_uint32_t raw;
@@ -434,6 +443,60 @@ int16_t wc_get_water_temperature_by_KELV(void)
     return (int16_t)(temp_c * 10.0f);
 }
 
+int16_t wc_get_water_temperature_with_calib(void)
+{
+	 int16_t theory_temp = wc_get_water_temperature_by_table();
+		if(theory_temp == temp_table[ADC_TABLE_SIZE - 1]){
+			//如果超过50℃，不用查表法，直接用公式计算，重新赋值
+			theory_temp = wc_get_water_temperature_by_KELV();
+		}
+ // 转换为浮点摄氏度
+    float theory_c = theory_temp / 10.0f;
+    float actual_c = theory_c;
+
+    // 分段线性校准（基于理论温度所在的区间）
+    if (theory_c >= calib_theory[0] && theory_c <= calib_theory[NTC_CALIB_POINTS-1]) {
+        // 确认校准点已初始化（如果未初始化，则使用理论值）
+        if (!calib_initialized) {
+            // 首次使用，将 calib_actual 设为理论值（即无校准）
+            for (int i = 0; i < NTC_CALIB_POINTS; i++) {
+                calib_actual[i] = calib_theory[i];
+            }
+            calib_initialized = RT_TRUE;
+        }
+        // 找到理论温度所在的区间
+        int idx = 0;
+        while (idx < NTC_CALIB_POINTS-1 && theory_c > calib_theory[idx+1]) idx++;
+        // 线性插值计算偏移
+        float t0 = calib_theory[idx];
+        float t1 = calib_theory[idx+1];
+        float a0 = calib_actual[idx];
+        float a1 = calib_actual[idx+1];
+        // 实际温度 = 理论温度 + (区间内实际与理论的差值)
+        // 更准确：直接线性插值实际温度
+        if (t1 - t0 > 1e-6) {
+            actual_c = a0 + (a1 - a0) * (theory_c - t0) / (t1 - t0);
+        } else {
+            actual_c = theory_c; // 防除零
+        }
+    }
+    // 转换回 0.1°C 整数
+    int16_t actual_temp = (int16_t)(actual_c * 10.0f);
+    if (actual_temp < -200) actual_temp = -200;
+    if (actual_temp > 1000) actual_temp = 1000;
+    return actual_temp;	
+}
+
+int16_t wc_get_water_temperature(void)
+{
+//	 int16_t theory_temp = wc_get_water_temperature_by_table();
+//		if(theory_temp == temp_table[ADC_TABLE_SIZE - 1]){
+//			//如果超过50℃，不用查表法，直接用公式计算，重新赋值
+//			theory_temp = wc_get_water_temperature_by_KELV();
+//		}
+//		return theory_temp;
+	return wc_get_water_temperature_by_KELV();
+}
 
 /* ========== Monitor Thread ========== */
 static void monitor_thread_entry(void *parameter)
@@ -587,8 +650,9 @@ static void monitor_thread_entry(void *parameter)
 						}
 						
 						// 读取水位开关（假设低电平表示有水）
-						high_level = (rt_pin_read(WATER_LEVEL_HIGH_PIN) == PIN_LOW);
-						low_level  = (rt_pin_read(WATER_LEVEL_LOW_PIN)  == PIN_HIGH);						
+						high_level = wc_water_tank_high_level();
+						low_level  = wc_water_tank_low_level();		
+						
 						
 						// 检测状态变化，仅变化时更新 LED
 						if (high_level != s_water_high_level) {
@@ -755,15 +819,56 @@ static void monitor_thread_entry(void *parameter)
 									uint16_t high_temp = target_temp;       // 达到目标即关闭
 						 
 									// 恒温控制：仅在加热器电源连接时执行
-									if (s_heater_mv > 5000) {   // 加热器电源已连接												
-										if (water_temp < low_temp && !wc_water_heater_is_on()) {
-												wc_water_heater_on();
-										} else if (water_temp >= target_temp && wc_water_heater_is_on()) {
-												wc_water_heater_off();
-										}
+									if (s_heater_mv > 5000 && !wc_water_tank_low_level()) {   // 加热器电源已连接 且 不缺水
+											if (water_temp < low_temp && !wc_water_heater_is_on()) {
+													wc_water_heater_on();
+											} else if (water_temp >= target_temp && wc_water_heater_is_on()) {
+													wc_water_heater_off();
+											}
+									} else if (wc_water_tank_low_level() && wc_water_heater_is_on()) {
+											// 如果缺水且加热器还在工作，强制关闭加热器（安全保护）
+											wc_water_heater_off();
+											rt_kprintf("[MONITOR] Water level low, forced heater off!\n");
 									}
+									
+									
 							}
-				}				
+				}
+
+				// 红外对射管，上一次有数据，超时500ms,清空数据
+				if (g_ir_alignment_enable) {
+						/* 获取当前匹配计数 */
+						uint16_t left_cnt = irm_get_left_match_cnt();
+						uint16_t right_cnt = irm_get_right_match_cnt();
+						static uint16_t last_left_cnt = 0, last_right_cnt = 0;
+						
+						/* 检查是否有新匹配 */
+						if (left_cnt != last_left_cnt || right_cnt != last_right_cnt) {
+								/* 有数据更新，重置超时计数器 */
+								ir_timeout_cnt = 0;
+						} else {
+								ir_timeout_cnt++;
+								if (ir_timeout_cnt >= 10) {  // 10 * 50ms = 500ms 无新数据
+										/* 超时，清除左右接收管的状态 */
+										irm_clear_left_status();
+										irm_clear_right_status();
+										rt_kprintf("[MONITOR] IR alignment timeout, status cleared\n");
+										ir_timeout_cnt = 0;  // 重置计数器，避免重复清除
+								}
+						}
+						last_left_cnt = left_cnt;
+						last_right_cnt = right_cnt;
+				} else {
+						/* 不在回充过程，不清零也不做超时检测，但可选择性清零一次（可选）*/
+						/* 如果想退出回充后立即清空旧状态，可以加以下代码 */
+						// static rt_bool_t was_enabled = RT_FALSE;
+						// if (was_enabled) {
+						//     irm_clear_left_status();
+						//     irm_clear_right_status();
+						//     was_enabled = RT_FALSE;
+						// }
+						// was_enabled = RT_FALSE;
+				}
 								
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
@@ -1070,10 +1175,36 @@ static void adc_show_offset(int argc, char** argv)
     rt_kprintf("Current charge diff offset: %d mV\n", s_charge_diff_offset);
 }
 MSH_CMD_EXPORT(adc_show_offset, "Show current charge diff offset");
-
 //需要出厂前校准scale比例系数
 //adc_calibrate 13 22630 2228
 //adc_calibrate 4 22620 2242
 // adc_set_offset 200
+static void ntc_calib(int argc, char **argv)
+{
+    if (argc != 3) {
+        rt_kprintf("Usage: ntc_calib <theory_temp> <actual_temp>\n");
+        rt_kprintf("Example: ntc_calib 35 34.5\n");
+        rt_kprintf("Supported theory temps: 30, 35, 40, 45\n");
+        return;
+    }
+    float theory = atof(argv[1]);
+    float actual = atof(argv[2]);
+    int idx = -1;
+    for (int i = 0; i < NTC_CALIB_POINTS; i++) {
+        if (fabs(theory - calib_theory[i]) < 0.1f) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx == -1) {
+        rt_kprintf("Theory temperature not supported. Use 30, 35, 40 or 45.\n");
+        return;
+    }
+    calib_actual[idx] = actual;
+    rt_kprintf("Calibration set: theory %.1f°C -> actual %.1f°C\n", theory, actual);
+    // 可选：保存到 Flash
+    // monitor_save_calibration();  // 如果希望掉电保存，需要扩展 MonitorCalibData_t
+}
+MSH_CMD_EXPORT(ntc_calib, "Calibrate NTC temperature at specific points");
 #endif /* RT_USING_MSH */
 

@@ -26,11 +26,11 @@
 #include "print_utils.h"
 #include "monitor.h"
 #include "user_action.h"
-#ifdef ULTRASONIC_GPIO
+//#ifdef ULTRASONIC_GPIO
     #include "ultrasonic_hc_sr04.h"
-#elif defined(ULTRASONIC_485)
+//#elif defined(ULTRASONIC_485)
     #include "ultrasonic_485.h"
-#endif
+//#endif
 #include "zltech_can_motor.h"
 /**
  * ========== Global Variables ==========
@@ -92,6 +92,7 @@ static void u8g2_init(void);
 static void render_boot_page(u8g2_t* u8g2);
 static void render_home_page(u8g2_t* u8g2);
 static void render_ultrasonic_page(u8g2_t* u8g2);
+static void render_ultrasonic_485_page(u8g2_t* u8g2);
 static void render_ir_sensor_page(u8g2_t* u8g2);
 static void render_battery_info_page(u8g2_t* u8g2);
 static void render_water_level_page(u8g2_t* u8g2);
@@ -132,7 +133,8 @@ void oled_handle_init(void)
 	
     oled_register_page(PAGE_BATTERY_INFO, "Battery Info", render_battery_info_page);
 	  oled_register_page(PAGE_IMU_DATA, "IMU Data", render_imu_data_page);
-    oled_register_page(PAGE_ULTRASONIC, "Ultrasonic", render_ultrasonic_page);
+    oled_register_page(PAGE_ULTRASONIC, "Ultrasonic sr04", render_ultrasonic_page);
+    oled_register_page(PAGE_ULTRASONIC_485, "Ultrasonic 485", render_ultrasonic_485_page);	
     oled_register_page(PAGE_IR_SENSOR, "IR Sensors", render_ir_sensor_page);
     
 		oled_register_page(PAGE_WATER_LEVEL, "Water Level", render_water_level_page);
@@ -660,7 +662,7 @@ static void render_home_page(u8g2_t* u8g2)
 
 static void render_ultrasonic_page(u8g2_t* u8g2)
 {
-    oled_draw_title_bar("Ultrasonic", RT_TRUE);
+    oled_draw_title_bar("Ultrasonic SR04", RT_TRUE);
     u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
     uint8_t y = 30;
     char buf[24];   // 足够大
@@ -729,6 +731,43 @@ static void render_ultrasonic_page(u8g2_t* u8g2)
 #else
     u8g2_DrawStr(u8g2, 8, 30, "Ultrasonic: None");
 #endif
+}
+
+static void render_ultrasonic_485_page(u8g2_t* u8g2)
+{
+    oled_draw_title_bar("Ultrasonic 485", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    uint8_t y = 30;
+    char buf[24];   // 足够大
+
+    uint32_t dist[7] = {0};
+    ultrasonic_485_get_distances(dist, 7);
+    // 第一行
+    u8g2_DrawStr(u8g2, 8, y, "F:");
+    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第二行
+    u8g2_DrawStr(u8g2, 8, y, "TS:");
+    rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第三行
+    u8g2_DrawStr(u8g2, 8, y, "BS:");
+    rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
+    // 第四行（后方只有中间一个）
+    u8g2_DrawStr(u8g2, 8, y, "R:");
+    rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
 }
 // 距离转换表（电压 mV -> 距离 mm），按电压从高到低排列
 typedef struct {
@@ -847,9 +886,15 @@ static void render_battery_info_page(u8g2_t* u8g2)
         u8g2_DrawStr(u8g2, 8, y, "Charge: Disconnected");
     }
     y += 8;
-
-    // 其他信息
-    u8g2_DrawStr(u8g2, 8, y, "Status: Normal");
+	
+		rt_uint32_t heater_mv = monitor_get_heater_voltage();
+    if (rt_pin_read(HEATER_CTRL_PIN) == PIN_HIGH && heater_mv > 5000) {
+        u8g2_DrawStr(u8g2, 8, y, "Heater: Active");
+    } else if(rt_pin_read(HEATER_CTRL_PIN) == PIN_LOW && heater_mv > 5000){
+        u8g2_DrawStr(u8g2, 8, y, "Heater: Idle");
+    }else{
+        u8g2_DrawStr(u8g2, 8, y, "Heater: Disconnected");
+    }
 }
 
 static void render_water_level_page(u8g2_t* u8g2)
@@ -1311,8 +1356,9 @@ void oled_test(int argc, char *argv[])
             case PAGE_HOME:      rt_kprintf("[OLED] Page %d: Main Menu + Battery Info\r\n",PAGE_HOME);   break;
             case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page %d: Detailed Battery Status\r\n",PAGE_BATTERY_INFO); break;
             case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page %d: IMU Pitch/Roll/Yaw\r\n",PAGE_IMU_DATA);        break;
-						case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic Sensor Data\r\n",PAGE_ULTRASONIC);    break;
-            case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
+						case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic sr04 Sensor Data\r\n",PAGE_ULTRASONIC);    break;
+						case PAGE_ULTRASONIC_485: rt_kprintf("[OLED] Page %d: Ultrasonic 485 Sensor Data\r\n",PAGE_ULTRASONIC_485);    break;
+					case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
 
             case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page %d: Water Tank Level\r\n",PAGE_WATER_LEVEL);         break;
 
@@ -1373,8 +1419,9 @@ void oled_status(int argc, char *argv[])
 				case PAGE_HOME:      rt_kprintf("[OLED] Page %d: Main Menu + Battery Info\r\n",PAGE_HOME);   break;
 				case PAGE_BATTERY_INFO: rt_kprintf("[OLED] Page %d: Detailed Battery Status\r\n",PAGE_BATTERY_INFO); break;
 				case PAGE_IMU_DATA:   rt_kprintf("[OLED] Page %d: IMU Pitch/Roll/Yaw\r\n",PAGE_IMU_DATA);        break;
-				case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic Sensor Data\r\n",PAGE_ULTRASONIC);    break;
-				case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
+				case PAGE_ULTRASONIC: rt_kprintf("[OLED] Page %d: Ultrasonic sr04 Sensor Data\r\n",PAGE_ULTRASONIC);    break;
+				case PAGE_ULTRASONIC_485: rt_kprintf("[OLED] Page %d: Ultrasonic 485 Sensor Data\r\n",PAGE_ULTRASONIC_485);    break;
+			case PAGE_IR_SENSOR: rt_kprintf("[OLED] Page %d: IR Cliff Sensors\r\n",PAGE_IR_SENSOR);          break;
 
 				case PAGE_WATER_LEVEL: rt_kprintf("[OLED] Page %d: Water Tank Level\r\n",PAGE_WATER_LEVEL);         break;
 

@@ -45,6 +45,8 @@ static rt_bool_t s_vel_in_free_stop = RT_FALSE;  // 是否已执行完全停车
 static void safety_check(void);
 static void process_cmd(CarCmd_t cmd, uint32_t param);
 
+rt_bool_t g_ir_alignment_enable = RT_FALSE;    // 电机运动时开启充电座红外接收管检测
+
 /* ==================== 辅助设备控制 ==================== */
 
 static void car_light_on(void)
@@ -248,11 +250,13 @@ static void process_cmd(CarCmd_t cmd, uint32_t param)
             break;
 
         case CAR_CMD_BRAKE_ON:
+						g_ir_alignment_enable = RT_FALSE;  // 停止运动，关闭检测
             ret = zlac_brake_engage();
             rt_kprintf("[CAR] Brake engaged, ret=%d\n", ret);
             break;
 
         case CAR_CMD_BRAKE_OFF:
+						g_ir_alignment_enable = RT_TRUE;   // 开始运动，启用红外对准检测
             ret = zlac_brake_release();
             rt_kprintf("[CAR] Brake released, ret=%d\n", ret);
             break;
@@ -279,10 +283,12 @@ static void process_cmd(CarCmd_t cmd, uint32_t param)
             /* 直接停止并抱闸 */
             zlac_control_free();
             zlac_brake_engage();
+						g_ir_alignment_enable = RT_FALSE;  // 停止运动，关闭检测
             rt_kprintf("[CAR]WORK STOP! Normal Stop command executed\n");
             break;					
 
 				case CAR_CMD_MOVE_START:
+					    g_ir_alignment_enable = RT_TRUE;   // 开始运动，启用红外对准检测
 						ret = zlac_brake_release();
 						if(ret != RT_EOK){
 							rt_kprintf("[CAR] Failed to brake release (err=%d)\n", ret);

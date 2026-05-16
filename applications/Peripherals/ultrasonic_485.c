@@ -8,7 +8,6 @@
 #include "monitor.h"
 #include "uart_packet.h"
 #include "packet_reports.h"
-#include <string.h>
 #include <stdlib.h>
 
 /* ----------------------------- 硬件配置 ----------------------------- */
@@ -276,10 +275,12 @@ static void poll_entry(void *parameter)
             if (current_send_mode == SEND_MODE_PER_SENSOR)
             {
 							  /* 立即发送单个传感器数据 */
+#ifdef ULTRASONIC_485						
 							  PacketReportUltrasonicSingleTypeDef single;
                 single.sensor_id = i;
                 single.distance_mm = (ret == RT_EOK) ? dist : 0xFFFFFFFF;
                 uart_packet_send(PKT_FUNC_ULTRASONIC, &single, sizeof(single));
+#endif							
                 if (ret == RT_EOK)
                 {
                     rt_snprintf(single_buf, sizeof(single_buf), "S%d=%dmm\n", i, dist);
@@ -309,10 +310,12 @@ static void poll_entry(void *parameter)
         }
 				if (current_send_mode == SEND_MODE_PER_ROUND)
         {
+#ifdef ULTRASONIC_485							
 					  PacketReportUltrasonicBatchTypeDef batch;
             batch.count = ULTRASONIC_485_NUM;
             memcpy(batch.distances, batch_distances, sizeof(batch.distances));
             uart_packet_send(PKT_FUNC_ULTRASONIC, &batch, sizeof(batch));
+#endif					
 					if(poll_print_enabled){
             rt_kprintf("%s\n", round_buf);
 					}

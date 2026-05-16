@@ -39,6 +39,7 @@ typedef enum
 		PAGE_BATTERY_INFO,      // Battery level info page
 		PAGE_IMU_DATA,          // IMU attitude data page
 		PAGE_ULTRASONIC,        // Ultrasonic sensor data page
+		PAGE_ULTRASONIC_485,
     PAGE_IR_SENSOR,         // IR sensor data page
 
 		PAGE_WATER_LEVEL,       // Water level info page

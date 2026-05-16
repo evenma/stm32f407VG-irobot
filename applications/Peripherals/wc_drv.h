@@ -47,7 +47,7 @@ void wc_small_pump_enable(rt_bool_t enable);
 /* ========== 清洁杆步进电机（35型，8步） ========== */
 /* position: 步数，范围 0 ~ CLEAN_ROD_MAX_STEPS，对应 0~70mm */
 #define CLEAN_ROD_MAX_STEPS   1600  //实际测量100mm行程,// 1500   /* 总行程 70mm */
-#define CLEAN_ROD_4MM_STEPS    86    /* 4mm 对应步数（约 1500/70*4） */
+#define CLEAN_ROD_4MM_STEPS   40// 86    /* 4mm 对应步数（约 1500/70*4） */
 void wc_clean_rod_set_position(rt_uint16_t position);
 void wc_clean_rod_stop(void);
 rt_uint16_t wc_clean_rod_get_position(void);

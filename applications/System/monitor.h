@@ -64,4 +64,7 @@ void monitor_init(void);
 
 uint32_t monitor_get_ultrasonic_baudrate(void);
 
+/* 红外对准检测使能标志（由 car_action 控制）*/
+extern rt_bool_t g_ir_alignment_enable;
+
 #endif /* PERIPHERALS_MONITOR_H__ */

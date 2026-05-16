@@ -173,19 +173,19 @@ menu "On-chip Peripheral Drivers"
                         int "Set UART2 RX buffer size"
                         range 64 65535
                         depends on RT_USING_SERIAL_V2
-                        default 1024
+                        default 2048
 
                     config BSP_UART2_TX_BUFSIZE
                         int "Set UART2 TX buffer size"
                         range 0 65535
                         depends on RT_USING_SERIAL_V2
-                        default 1024
+                        default 256
 
                     config BSP_UART2_DMA_PING_BUFSIZE
                         int "Set UART2 RX DMA ping-pong buffer size"
                         range 32 65535
                         depends on RT_USING_SERIAL_V2 && BSP_UART2_RX_USING_DMA
-                        default 256                        
+                        default 512                        
                 endif
 			
 			menuconfig BSP_USING_UART4
@@ -295,6 +295,12 @@ menu "On-chip Peripheral Drivers"
 			config BSP_USING_TIM5     
 				bool "Enable TIM5"
 				default y
+            config BSP_USING_TIM6
+                bool "Enable TIM6"
+                default y
+            config BSP_USING_TIM7
+                bool "Enable TIM7"
+                default y				
         endif
 
 	menuconfig BSP_USING_PWM

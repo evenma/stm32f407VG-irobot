@@ -315,7 +315,7 @@ static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t d
 					if (new_pos < 0) new_pos = 0;
 					current_pos = (rt_uint16_t)new_pos;
             wc_clean_rod_set_position(current_pos);
-            if (wait_stop_or_timeout(500) != 0) {
+            if (wait_stop_or_timeout(100) != 0) {
                 stopped = RT_TRUE;
                 break;
             }
