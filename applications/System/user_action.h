@@ -73,6 +73,7 @@ typedef struct {
 
 /* 外部变量声明 */
 extern volatile UserActionConfig_t g_action_cfg;
+extern volatile rt_bool_t g_auto_water_heater_enable;
 
 /* 工作状态结构体 */
 typedef struct {

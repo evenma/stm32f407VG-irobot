@@ -20,6 +20,7 @@
 // 子命令定义（PKT_FUNC_TOILET）
 #define TOILET_SUB_WATER_LEVEL    0x01
 #define TOILET_SUB_WATER_TEMP     0x02
+#define TOILET_SUB_SET_WATER_HEATER_AUTO   0x03   // 设置自动加热开关
 
 // 子命令定义（PKT_FUNC_MOTOR）
 #define MOTOR_SUB_VELOCITY_STATUS   0x01   // 实时速度+使能/运行状态（高频）

@@ -527,6 +527,10 @@ static void packet_toilet_handle(pkt_frame_t *frame)
 //            user_action_send_cmd(ACTION_CLEAN_ROD_DEC, 0);
             rt_kprintf("[TOILET] Rod dec\n");
             break;
+				case ACTION_SET_WATER_HEATER_AUTO:
+						user_action_send_cmd(ACTION_SET_WATER_HEATER_AUTO, param);
+						rt_kprintf("[TOILET] Auto water heater %s\n", param ? "ON" : "OFF");
+						break;
         default:
             rt_kprintf("[PACKET] Unknown toilet cmd: 0x%02X\n", sub_cmd);
             break;

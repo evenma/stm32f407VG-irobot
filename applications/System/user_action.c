@@ -53,6 +53,9 @@ static rt_bool_t s_status_timer_running = RT_FALSE;
 
 static uint16_t s_water_target_temp = 390;  // 默认 39.0°C
 
+/* 全局变量，默认开启自动加热 */
+volatile rt_bool_t g_auto_water_heater_enable = RT_TRUE;
+
 /* ========== 动作执行辅助函数 ========== */
 void user_action_set_water_target_temp(uint16_t temp_0p1c)
 {
@@ -713,6 +716,14 @@ static void user_action_thread_entry(void *param)
 								wc_ir_light_off();
 								rt_kprintf("[ACTION] IR light OFF\n");
 								break;
+						case ACTION_SET_WATER_HEATER_AUTO:
+								g_auto_water_heater_enable = (param_val != 0) ? RT_TRUE : RT_FALSE;
+								rt_kprintf("[ACTION] Auto water heater %s\n", g_auto_water_heater_enable ? "ON" : "OFF");
+								// 如果关闭自动加热，且当前加热器在工作，则强制关闭
+								if (!g_auto_water_heater_enable && wc_water_heater_is_on()) {
+										wc_water_heater_off();
+								}
+								break;
             default:
                 rt_kprintf("[ACTION] Unknown command\n");
                 break;
@@ -1035,7 +1046,7 @@ static void toilet_cmd(int argc, char **argv)
     }else if (strcmp(argv[1], "rod_dec") == 0) {								// 调整清洁杆位置  减1mm
 //        user_action_send_cmd(ACTION_CLEAN_ROD_DEC, 0);
 				if (s_work_status.clean_rear || s_work_status.clean_female) {
-						rt_event_send(&s_action_evt, ACTION_CLEAN_ROD_DEC);
+						rt_event_send(&s_action_evt, EVENT_CLEAN_ROD_DEC);
 				} else {
 						rt_kprintf("[ACTION] No active clean, cannot adjust position\n");
 				}				
@@ -1096,6 +1107,10 @@ static void toilet_cmd(int argc, char **argv)
 				}
 				wc_pipe_distributor_set_position((rt_uint16_t)pos);
 				rt_kprintf("[CMD] Pipe distributor set to %d\n", pos);
+		}else if (strcmp(argv[1], "auto_heater") == 0) {
+				if (argc < 3) {rt_kprintf("Usage: toilet auto_heater 1/0\n");}
+				int on = atoi(argv[2]);
+				user_action_send_cmd(ACTION_SET_WATER_HEATER_AUTO, on);
 		}
 		else if (strcmp(argv[1], "status") == 0) {
 				if (argc == 2) {

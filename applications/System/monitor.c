@@ -133,6 +133,7 @@ static uint32_t water_temp_report_cnt = 0;
 static uint32_t ir_timeout_cnt = 0;  // 红外接收管超时未上报
 static uint8_t last_left_match = 0, last_right_match = 0;
 
+#define HEATER_POWER_STABLE_DELAY_MS  3000       // 等待3秒稳定
 /**
  * @brief 保存校准数据到 Flash 分区
  */
@@ -529,6 +530,11 @@ static void monitor_thread_entry(void *parameter)
 		rt_bool_t cliff_trigger;
 		uint8_t trigger_val;
 		uint8_t ir_mask;
+		
+		static uint32_t heater_power_on_tick = 0;        // 电源接入时刻（毫秒）
+		static uint8_t heater_power_stable_wait = 0;     // 是否在等待稳定
+		
+		static uint16_t last_left_cnt = 0, last_right_cnt = 0;
  
 		rt_thread_mdelay(5000);    // 等待系统启动稳定后开启
 
@@ -779,14 +785,6 @@ static void monitor_thread_entry(void *parameter)
 						charge_pkt.power_mw = s_charge_power_mw;
 						uart_packet_send(PKT_FUNC_SYS, &charge_pkt, sizeof(charge_pkt));
 				}
-//				// 加热管电源对连接的判断  变化触发上报
-				heater_present = (s_heater_mv > 5000) ? 1 : 0;
-				if (heater_present != last_heater_present) {
-						last_heater_present = heater_present;
-						heat_pkt.event = heater_present;
-						heat_pkt.voltage_mv = s_heater_mv;
-						uart_packet_send(PKT_FUNC_SYS, &heat_pkt, sizeof(heat_pkt));
-				}
 //				//悬崖传感器上报 周期检测并变化触发
 				read_cliff_sensor(&front_mv, &rear_mv, &cliff_trigger);
 //				rt_kprintf("cliff front %dmv,rear %dmv,trig %d\n",front_mv,rear_mv,cliff_trigger);
@@ -798,6 +796,36 @@ static void monitor_thread_entry(void *parameter)
 						cliff_pkt.rear_mv = rear_mv;
 						uart_packet_send(PKT_FUNC_SYS, &cliff_pkt, sizeof(cliff_pkt));
 				}
+				
+				// 加热管电源对连接的判断  变化触发上报
+				heater_present = (s_heater_mv > 5000) ? 1 : 0;
+				if (heater_present != last_heater_present) {
+						last_heater_present = heater_present;
+						heat_pkt.event = heater_present;
+						heat_pkt.voltage_mv = s_heater_mv;
+						uart_packet_send(PKT_FUNC_SYS, &heat_pkt, sizeof(heat_pkt));
+				}
+				
+				// 检测加热器电源是否刚接通
+				if (s_heater_mv > 5000) {
+						if (heater_power_stable_wait == 0) {
+								// 电源刚刚接通，记录时间并进入等待稳定状态
+								heater_power_on_tick = rt_tick_get_millisecond();
+								heater_power_stable_wait = 1;
+								rt_kprintf("[MONITOR] Heater power connected, waiting %d ms for stable\n", HEATER_POWER_STABLE_DELAY_MS);
+						} else if (heater_power_stable_wait == 1) {
+								// 检查是否已经达到稳定延时
+								if (rt_tick_get_millisecond() - heater_power_on_tick >= HEATER_POWER_STABLE_DELAY_MS) {
+										heater_power_stable_wait = 2;  // 稳定完成，可以正常控制
+										rt_kprintf("[MONITOR] Heater power stable, enable control\n");
+								}
+						}
+				} else {
+						// 电源断开，重置状态
+						heater_power_stable_wait = 0;
+						heater_power_on_tick = 0;
+				}				
+				
 				//水温加热以及（周期上报，每5秒）
 				water_temp_report_cnt++;
 				if (water_temp_report_cnt >= 100) { // 50ms*100 = 5s
@@ -818,14 +846,14 @@ static void monitor_thread_entry(void *parameter)
 									uint16_t low_temp = target_temp - 20;   // 低于目标 2°C 开启加热
 									uint16_t high_temp = target_temp;       // 达到目标即关闭
 						 
-									// 恒温控制：仅在加热器电源连接时执行
-									if (s_heater_mv > 5000 && !wc_water_tank_low_level()) {   // 加热器电源已连接 且 不缺水
+									// 恒温控制：仅在加热器电源连接时执行  自动加热开启 + 电源稳定完成 + 水位正常
+									if (g_auto_water_heater_enable&& heater_power_stable_wait == 2 && !wc_water_tank_low_level()) {   // 加热器电源已连接 且 不缺水
 											if (water_temp < low_temp && !wc_water_heater_is_on()) {
 													wc_water_heater_on();
 											} else if (water_temp >= target_temp && wc_water_heater_is_on()) {
 													wc_water_heater_off();
 											}
-									} else if (wc_water_tank_low_level() && wc_water_heater_is_on()) {
+									} else if ((!g_auto_water_heater_enable || wc_water_tank_low_level() || heater_power_stable_wait != 2) && wc_water_heater_is_on()) {
 											// 如果缺水且加热器还在工作，强制关闭加热器（安全保护）
 											wc_water_heater_off();
 											rt_kprintf("[MONITOR] Water level low, forced heater off!\n");
@@ -839,8 +867,7 @@ static void monitor_thread_entry(void *parameter)
 				if (g_ir_alignment_enable) {
 						/* 获取当前匹配计数 */
 						uint16_t left_cnt = irm_get_left_match_cnt();
-						uint16_t right_cnt = irm_get_right_match_cnt();
-						static uint16_t last_left_cnt = 0, last_right_cnt = 0;
+						uint16_t right_cnt = irm_get_right_match_cnt();						
 						
 						/* 检查是否有新匹配 */
 						if (left_cnt != last_left_cnt || right_cnt != last_right_cnt) {
