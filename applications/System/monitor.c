@@ -15,7 +15,7 @@
 #include "packet_reports.h"
 #include "wc_drv.h"
 #include "user_action.h"
-#include "irm_8601m2.h"
+#include "ir_receiver.h"
 
 // 温度-ADC 查找表 (温度: -5°C ~ 50°C, 步长 1°C)
 // ADC 值对应温度升高而递减
@@ -120,7 +120,6 @@ static uint8_t last_low_battery = 0;
 static uint8_t last_charger_event = 0xFF;  // 0:断开,1:连接未充,2:充电中
 static uint8_t last_heater_present = 0xFF; // 0:断开,1:连接
 static uint8_t last_cliff_trigger = 0xFF;  // 0:无悬崖,1:有悬崖
-static uint8_t last_ir_mask = 0xFF;        // 红外对射管状态掩码
 static uint8_t last_water_high = 0xFF;     // 高水位状态
 static uint8_t last_water_low = 0xFF;      // 低水位状态
 static uint16_t last_battery_mv_report = 0;// 用于定时上报电池电压
@@ -130,10 +129,8 @@ static uint8_t charger_connected = 0;
 // 水温上报定时计数器（每5秒一次）
 static uint32_t water_temp_report_cnt = 0;
 
-static uint32_t ir_timeout_cnt = 0;  // 红外接收管超时未上报
-static uint8_t last_left_match = 0, last_right_match = 0;
-
 #define HEATER_POWER_STABLE_DELAY_MS  3000       // 等待3秒稳定
+#define CHARGE_TIMEOUT_MS   (8 * 3600 * 1000)   // 8小时超时（毫秒）
 /**
  * @brief 保存校准数据到 Flash 分区
  */
@@ -315,15 +312,6 @@ void read_cliff_sensor(uint16_t *front_mv, uint16_t *rear_mv, rt_bool_t *trigger
 
     // 阈值判断（与 car_action 中一致）
     *trigger = (*front_mv < CLIFF_VOLTAGE_THRESHOLD_MV || *rear_mv < CLIFF_VOLTAGE_THRESHOLD_MV);
-}
-
-static uint8_t read_ir_sensors(void)
-{
-    uint8_t mask = 0;
-    if (rt_pin_read(IR_SENSOR1_PIN) == PIN_LOW) mask |= 0x01;
-    if (rt_pin_read(IR_SENSOR2_PIN) == PIN_LOW) mask |= 0x02;
-    if (rt_pin_read(IR_SENSOR3_PIN) == PIN_LOW) mask |= 0x04;
-    return mask;
 }
 
 /**
@@ -523,18 +511,21 @@ static void monitor_thread_entry(void *parameter)
 		static PacketReportChargerEventTypeDef charge_pkt = {.sub_cmd = SYS_SUB_CHARGER_EVENT};
 		static PacketReportHeaterEventTypeDef heat_pkt = {.sub_cmd = SYS_SUB_HEATER_EVENT};			
 		static PacketReportCliffTypeDef cliff_pkt = {.sub_cmd = SYS_SUB_CLIFF};			
-		static PacketReportIRSwitchTypeDef ir_pkt = {.sub_cmd = SYS_SUB_IR_SWITCH};	
 		
 		uint8_t heater_present;		
 		uint16_t front_mv, rear_mv;
 		rt_bool_t cliff_trigger;
 		uint8_t trigger_val;
-		uint8_t ir_mask;
 		
 		static uint32_t heater_power_on_tick = 0;        // 电源接入时刻（毫秒）
 		static uint8_t heater_power_stable_wait = 0;     // 是否在等待稳定
 		
-		static uint16_t last_left_cnt = 0, last_right_cnt = 0;
+		static uint16_t last_left_cnt = 0, last_right_cnt = 0;       // 左右红外接收管检测
+		static uint8_t left_timeout_cnt = 0, right_timeout_cnt = 0;
+		
+		static uint32_t charge_start_tick = 0;      // 充电开始时刻（毫秒）
+		static rt_bool_t charging = RT_FALSE;       // 是否正在充电
+		static rt_bool_t last_heater_state = RT_FALSE; // 上一次加热器状态
  
 		rt_thread_mdelay(5000);    // 等待系统启动稳定后开启
 
@@ -753,14 +744,6 @@ static void monitor_thread_entry(void *parameter)
 						uart_packet_send(PKT_FUNC_TOILET, &water_pkt, sizeof(water_pkt));
 				}				
 
-				// 红外对射管 变化触发  红外对射管在回充电桩过程中高频触发，平时不用读取
-//				ir_mask = read_ir_sensors();
-//				if (ir_mask != last_ir_mask) {
-//						last_ir_mask = ir_mask;
-//						ir_pkt.state_mask = ir_mask;
-//						uart_packet_send(PKT_FUNC_SYS, &ir_pkt, sizeof(ir_pkt));
-//				}	
-
 //				// 电池电压上报（每10秒一次，避免频繁）
 				battery_report_cnt++;
 				if (battery_report_cnt >= 200) { // 50ms * 200 = 10秒
@@ -785,6 +768,37 @@ static void monitor_thread_entry(void *parameter)
 						charge_pkt.power_mw = s_charge_power_mw;
 						uart_packet_send(PKT_FUNC_SYS, &charge_pkt, sizeof(charge_pkt));
 				}
+				// 充电状态变化处理（控制 LED0 和 充电超时记录）
+				if (charger_event == 2) {
+						if (!charging) {
+								// 开始充电
+								charging = RT_TRUE;
+								charge_start_tick = rt_tick_get_millisecond();
+								led_set_color(LED_IDX_CHARGER, LED_COLOR_ON);   // 点亮充电指示灯
+								rt_kprintf("[MONITOR] Charging started, timeout set to 8 hours\n");
+						}
+				} else {
+						if (charging) {
+								// 充电结束
+								charging = RT_FALSE;
+								led_set_color(LED_IDX_CHARGER, LED_COLOR_OFF);  // 关闭充电指示灯
+								rt_kprintf("[MONITOR] Charging stopped\n");
+						}
+				}
+				// 充电超时检查
+				if (charging) {
+						uint32_t now = rt_tick_get_millisecond();
+						if (now - charge_start_tick >= CHARGE_TIMEOUT_MS) {
+								// 超时，强制关闭充电
+								rt_pin_write(CHARGER_CONTROL_PIN, PIN_LOW);
+								led_set_color(LED_IDX_CHARGER, LED_COLOR_OFF);
+								charging = RT_FALSE;
+								rt_kprintf("[MONITOR] Charging timeout (8 hours), force stop\n");
+								// 可选：将 charger_event 强制设为断开，避免重复上报
+						}
+				}
+				
+				
 //				//悬崖传感器上报 周期检测并变化触发
 				read_cliff_sensor(&front_mv, &rear_mv, &cliff_trigger);
 //				rt_kprintf("cliff front %dmv,rear %dmv,trig %d\n",front_mv,rear_mv,cliff_trigger);
@@ -857,46 +871,63 @@ static void monitor_thread_entry(void *parameter)
 											// 如果缺水且加热器还在工作，强制关闭加热器（安全保护）
 											wc_water_heater_off();
 											rt_kprintf("[MONITOR] Water level low, forced heater off!\n");
+									}																		
+							}
+						   // 水箱加热器 LED 控制（检测加热器实际状态）
+							rt_bool_t heater_now = wc_water_heater_is_on();
+							if (heater_now != last_heater_state) {
+									last_heater_state = heater_now;
+									if (heater_now) {
+											led_set_color(LED_IDX_HEATER, LED_COLOR_ON);    // 加热器工作，点亮红灯
+									} else {
+											led_set_color(LED_IDX_HEATER, LED_COLOR_OFF);   // 加热器关闭，熄灭红灯
 									}
-									
-									
 							}
 				}
 
 				// 红外对射管，上一次有数据，超时500ms,清空数据
-				if (g_ir_alignment_enable) {
-						/* 获取当前匹配计数 */
-						uint16_t left_cnt = irm_get_left_match_cnt();
-						uint16_t right_cnt = irm_get_right_match_cnt();						
-						
-						/* 检查是否有新匹配 */
-						if (left_cnt != last_left_cnt || right_cnt != last_right_cnt) {
-								/* 有数据更新，重置超时计数器 */
-								ir_timeout_cnt = 0;
-						} else {
-								ir_timeout_cnt++;
-								if (ir_timeout_cnt >= 10) {  // 10 * 50ms = 500ms 无新数据
-										/* 超时，清除左右接收管的状态 */
-										irm_clear_left_status();
-										irm_clear_right_status();
-										rt_kprintf("[MONITOR] IR alignment timeout, status cleared\n");
-										ir_timeout_cnt = 0;  // 重置计数器，避免重复清除
-								}
-						}
-						last_left_cnt = left_cnt;
-						last_right_cnt = right_cnt;
-				} else {
-						/* 不在回充过程，不清零也不做超时检测，但可选择性清零一次（可选）*/
-						/* 如果想退出回充后立即清空旧状态，可以加以下代码 */
-						// static rt_bool_t was_enabled = RT_FALSE;
-						// if (was_enabled) {
-						//     irm_clear_left_status();
-						//     irm_clear_right_status();
-						//     was_enabled = RT_FALSE;
-						// }
-						// was_enabled = RT_FALSE;
-				}
-								
+			uint8_t left_status = ir_get_left_status();
+			uint8_t right_status = ir_get_right_status();
+				
+// 左通道：如果状态已是0，则直接重置计数器，无需超时清除
+				if (left_status == 0) {
+					left_timeout_cnt = 0;
+			} else {
+					uint16_t left_cnt = ir_get_left_match_cnt();
+					// 左通道处理
+					if (left_cnt != last_left_cnt) {
+							left_timeout_cnt = 0;
+					} else {
+							left_timeout_cnt++;
+							if (left_timeout_cnt >= 10) {  // 500ms 无新数据
+									ir_clear_left_status();
+									rt_kprintf("[MONITOR] Left IR timeout, cleared\n");
+									left_timeout_cnt = 0;  // 重置，避免重复清除
+							}
+					}
+					last_left_cnt = left_cnt;
+			}
+			
+			// 右通道 
+			if (right_status == 0) {
+					right_timeout_cnt = 0;
+			} else {
+					uint16_t right_cnt = ir_get_right_match_cnt();	
+					// 右通道处理
+					if (right_cnt != last_right_cnt) {
+							right_timeout_cnt = 0;
+					} else {
+							right_timeout_cnt++;
+							if (right_timeout_cnt >= 10) {
+									ir_clear_right_status();
+									rt_kprintf("[MONITOR] Right IR timeout, cleared\n");
+									right_timeout_cnt = 0;
+							}
+					}
+					last_right_cnt = right_cnt;
+			}			
+
+			
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
 }

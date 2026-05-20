@@ -137,7 +137,7 @@ static void action_flush_toilet(void)
         return;  // 收到停止信号
     }
 
-    wc_sewage_pump_on();
+//    wc_sewage_pump_on();
     rt_kprintf("[ACTION] Sewage pump ON\n");
 
     /* 继续运行剩余冲洗时间（总冲洗时间 - 延迟时间） */
@@ -145,7 +145,7 @@ static void action_flush_toilet(void)
     if (remaining_ticks > 0) {
         if (wait_stop_or_timeout(remaining_ticks) != 0) {
             // 收到停止信号，需先关排污泵再关大水泵
-            wc_sewage_pump_off();
+//            wc_sewage_pump_off();
             wc_pump_wash_off();
 					   s_work_status.flush_toilet = RT_FALSE;
             return;
@@ -153,7 +153,7 @@ static void action_flush_toilet(void)
     }
 
     /* 3. 关闭：先关排污泵，延时后关大水泵 */
-    wc_sewage_pump_off();
+//    wc_sewage_pump_off();
     rt_kprintf("[ACTION] Sewage pump OFF\n");
 
     if (wait_stop_or_timeout(RT_TICK_PER_SECOND * g_action_cfg.flush_pump_stop_delay_sec) != 0) {
@@ -728,6 +728,10 @@ static void user_action_thread_entry(void *param)
                 rt_kprintf("[ACTION] Unknown command\n");
                 break;
         }
+				rt_ubase_t tmp_cmd;
+				while (rt_mb_recv(&s_action_mb, &tmp_cmd, RT_WAITING_NO) == RT_EOK) {
+						rt_kprintf("[ACTION] Discard queued command: %d\n", (int)(tmp_cmd & 0xFF));
+				}
     }
 }
 

@@ -32,7 +32,9 @@ typedef enum
     BUTTON_ID_SW4,          // PC14 - Next page
     BUTTON_ID_SW5,          // PC15 - Not used
     BUTTON_ID_HOME,         // PE9 - Return home
-    
+    BUTTON_ID_KNOB_BUTTON,   // 旋钮按钮（冲洗）
+    BUTTON_ID_KNOB_FEMALE,   // 旋钮女士清洁
+    BUTTON_ID_KNOB_REAR,     // 旋钮臀部清洁    
     BUTTON_TOTAL_COUNT      // Total number of buttons
 } ButtonId_t;
 

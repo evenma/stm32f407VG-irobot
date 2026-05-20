@@ -41,7 +41,7 @@ typedef enum
 		PAGE_ULTRASONIC,        // Ultrasonic sensor data page
 		PAGE_ULTRASONIC_485,
     PAGE_IR_SENSOR,         // IR sensor data page
-
+    PAGE_IR_ALIGN,           // 新增：充电对准红外三管状态页面
 		PAGE_WATER_LEVEL,       // Water level info page
 
     /* ZLAC8015D 电机相关页面 */

@@ -17,13 +17,16 @@
 
 /**
  * @brief LED 配对索引定义
- * 0 = LED0 (工作绿灯), 1 = LED1 (故障红灯)
+ * 0 = LED0 (工作绿灯), 1 = LED1 (故障红灯)  
+ *重新定义：  0 = LED0 (充电器工作指示绿灯), 1 = LED1 (水箱加热管工作指示红灯)
  * 2 = LED2 (满电绿灯), 3 = LED3 (低电红灯)
  * 4 = LED4 (满水绿灯), 5 = LED5 (缺水红灯)
  * 6 = LED6 (导航绿灯←上位机), 7 = LED7 (异常红灯←上位机)
  */
 #define LED_IDX_WORKING_GREEN   0
 #define LED_IDX_FAULT_RED       1
+#define LED_IDX_CHARGER         0   // 充电器工作指示灯（原WORKING_GREEN）
+#define LED_IDX_HEATER          1   // 水箱加热管工作指示灯（原FAULT_RED）
 #define LED_IDX_FULL_BAT_GREEN  2
 #define LED_IDX_LOW_BAT_RED     3
 #define LED_IDX_FULL_WATER_GREEN    4

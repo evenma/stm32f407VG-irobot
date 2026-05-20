@@ -150,19 +150,19 @@ static void step_motor_rod_phase(rt_uint8_t phase)
 static void knob_female_isr(void *args)
 {
     // 下降沿触发，发送女士清洁命令
-    user_action_send_cmd(ACTION_CLEAN_FEMALE, 0);
+//    user_action_send_cmd(ACTION_CLEAN_FEMALE, 0);
 }
 
 static void knob_rear_isr(void *args)
 {
     // 下降沿触发，发送臀部清洁命令
-    user_action_send_cmd(ACTION_CLEAN_REAR, 0);
+//    user_action_send_cmd(ACTION_CLEAN_REAR, 0);
 }
 
 static void knob_button_isr(void *args)
 {
     // 下降沿触发，发送冲洗马桶命令
-    user_action_send_cmd(ACTION_FLUSH_TOILET, 0);
+//    user_action_send_cmd(ACTION_FLUSH_TOILET, 0);
 }
 
 
@@ -497,14 +497,14 @@ rt_uint16_t wc_water_temp_get(void)
     return (rt_uint16_t)raw;
 }
 
-/* 水位开关 */
+/* 水位开关 高低水位逻辑是反，高水位浮起来离开霍尔，才是逻辑高 ,低水位浮不起来，触发霍尔，逻辑高*/
 rt_bool_t wc_water_tank_high_level(void)
 {
-    return rt_pin_read(WATER_LEVEL_HIGH_PIN) == PIN_HIGH ? RT_TRUE : RT_FALSE;
+	return rt_pin_read(WATER_LEVEL_HIGH_PIN) == PIN_HIGH ? RT_TRUE : RT_FALSE;
 }
 rt_bool_t wc_water_tank_low_level(void)
 {
-    return rt_pin_read(WATER_LEVEL_LOW_PIN) == PIN_HIGH ? RT_TRUE : RT_FALSE;
+    return rt_pin_read(WATER_LEVEL_LOW_PIN) == PIN_HIGH ? RT_FALSE : RT_TRUE;
 }
 
 /* 旋钮中断初始化 */
@@ -571,7 +571,7 @@ void wc_drv_init(void)
     rt_pin_mode(HEATER_CTRL_PIN, PIN_MODE_OUTPUT);
     rt_pin_write(HEATER_CTRL_PIN, PIN_LOW);
 
-    knob_irq_init();
+//    knob_irq_init();
 
     rt_pin_mode(WATER_LEVEL_HIGH_PIN, PIN_MODE_INPUT_PULLUP);
     rt_pin_mode(WATER_LEVEL_LOW_PIN, PIN_MODE_INPUT_PULLUP);

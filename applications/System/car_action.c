@@ -66,7 +66,7 @@ static void car_light_off(void)
 static void car_charger_on(void)
 {
     rt_pin_write(CHARGER_CONTROL_PIN, PIN_HIGH);
-    rt_kprintf("[CAR] Charger enabled\n");
+    rt_kprintf("[CAR] Charger enabled\n");		
 }
 
 static void car_charger_off(void)

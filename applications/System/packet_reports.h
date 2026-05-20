@@ -93,8 +93,9 @@ typedef struct {
 
 // 4. 红外对射管 (功能号 PKT_FUNC_SYS)
 typedef struct {
-		uint8_t sub_cmd;            // = SYS_SUB_IR_SWITCH	
-	uint8_t state_mask;   			// 左接收高4位，右接收低4位； bit2:上管，bit1:左管,  bit0: 右管, 
+	uint8_t sub_cmd;            // = SYS_SUB_IR_SWITCH	
+	uint8_t lr;                 // 1:左接收管, 2:右接收管
+	uint8_t mask;               // 接收管状态：bit2:上管, bit1:左管, bit0:右管
 } PacketReportIRSwitchTypeDef;
 
 // 5. 悬崖传感器数据 (功能号 PKT_FUNC_SYS)

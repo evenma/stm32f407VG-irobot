@@ -30,7 +30,7 @@
 #include "uart_packet.h"
 #include "packet_handle.h"
 #include "car_action.h"
-#include "irm_8601m2.h"
+#include "ir_receiver.h"
 
 #define LOG_TAG "main.tag"
 #define LOG_LVL LOG_LVL_DBG
@@ -58,11 +58,9 @@ int main(void)
 	
 	oled_handle_init();  // oled,led公用spi 顺序不能掉换
 	led_init();
-	led_off_all();
 	
 	button_init();
 	buzzer_init();
-	irm_8601m2_init();
 
 //#ifdef ULTRASONIC_GPIO
     hc_sr04_init();
@@ -76,7 +74,9 @@ int main(void)
 	
 	monitor_init();   // 优先初始化，因为读取data分区参数设置	
 	
+	ir_receiver_init();
 	buzzer_beep_once();  // 初始化完毕，蜂鸣一次
+		led_off_all();
     while (1)
     {
 //        rt_pin_write(LED0_PIN, PIN_HIGH);

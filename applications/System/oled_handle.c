@@ -32,6 +32,7 @@
     #include "ultrasonic_485.h"
 //#endif
 #include "zltech_can_motor.h"
+#include "ir_receiver.h"
 /**
  * ========== Global Variables ==========
  */
@@ -95,6 +96,7 @@ static void render_ultrasonic_page(u8g2_t* u8g2);
 static void render_ultrasonic_485_page(u8g2_t* u8g2);
 static void render_ir_sensor_page(u8g2_t* u8g2);
 static void render_battery_info_page(u8g2_t* u8g2);
+static void render_ir_align_page(u8g2_t *u8g2);
 static void render_water_level_page(u8g2_t* u8g2);
 static void render_imu_data_page(u8g2_t* u8g2);
 static void render_fault_log_page(u8g2_t* u8g2);
@@ -136,7 +138,7 @@ void oled_handle_init(void)
     oled_register_page(PAGE_ULTRASONIC, "Ultrasonic sr04", render_ultrasonic_page);
     oled_register_page(PAGE_ULTRASONIC_485, "Ultrasonic 485", render_ultrasonic_485_page);	
     oled_register_page(PAGE_IR_SENSOR, "IR Sensors", render_ir_sensor_page);
-    
+		oled_register_page(PAGE_IR_ALIGN, "IR Alignment", render_ir_align_page);    
 		oled_register_page(PAGE_WATER_LEVEL, "Water Level", render_water_level_page);
 
 	    // 注册 ZLAC8015D 电机相关页面
@@ -846,6 +848,37 @@ static void render_ir_sensor_page(u8g2_t* u8g2)
     // 显示悬崖触发状态
     rt_snprintf(buf, sizeof(buf), "Cliff: %s", cliff_trigger ? "WARNING" : "OK");
     u8g2_DrawStr(u8g2, 8, y, buf);
+}
+
+// 充电座红外接收管
+static void render_ir_align_page(u8g2_t *u8g2)
+{
+    uint8_t left_status = ir_get_left_status();
+    uint8_t right_status = ir_get_right_status();
+    uint8_t left_up   = (left_status >> 2) & 1;
+    uint8_t left_left = (left_status >> 1) & 1;
+    uint8_t left_right = left_status & 1;
+
+    uint8_t right_up   = (right_status >> 2) & 1;
+    uint8_t right_left = (right_status >> 1) & 1;
+    uint8_t right_right = right_status & 1;
+
+    oled_draw_title_bar("IRM-8601M2", RT_TRUE);
+    u8g2_SetFont(u8g2, u8g2_font_synchronizer_nbp_tf);
+    uint8_t y = 30;
+    uint8_t line_height = 10;
+
+    // 第一行：Left:
+    u8g2_DrawStr(u8g2, 8, y, "Left:");
+    // 第二行：U:x L:x R:x
+    char buf[24];
+    rt_snprintf(buf, sizeof(buf), "U:%d L:%d R:%d", left_up, left_left, left_right);
+    u8g2_DrawStr(u8g2, 8, y + line_height, buf);
+    // 第三行：Right:
+    u8g2_DrawStr(u8g2, 8, y + 2 * line_height, "Right:");
+    // 第四行：U:x L:x R:x
+    rt_snprintf(buf, sizeof(buf), "U:%d L:%d R:%d", right_up, right_left, right_right);
+    u8g2_DrawStr(u8g2, 8, y + 3 * line_height, buf);
 }
 
 static void render_battery_info_page(u8g2_t* u8g2)

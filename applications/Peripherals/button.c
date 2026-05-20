@@ -22,6 +22,7 @@
 #include <board.h>	 			/* 提供 GET_PIN 等 */
 #include "button.h"
 #include "global_conf.h"
+#include "user_action.h"
 
 /* 将系统 tick 转换为毫秒 */
 #define rt_tick_get_millisecond() (rt_tick_get()) //(rt_tick_get() * 1000 / RT_TICK_PER_SECOND)   // 本系统的 RT_TICK_PER_SECOND = 1000
@@ -99,6 +100,9 @@ void button_init(void)
     rt_pin_mode(KEY_SW4_PIN, PIN_MODE_INPUT_PULLUP);    // PC14
     rt_pin_mode(KEY_SW5_PIN, PIN_MODE_INPUT_PULLUP);    // PC15
     rt_pin_mode(KEY_HOME_PIN, PIN_MODE_INPUT_PULLUP);   // PE9
+		rt_pin_mode(KNOB_BUTTON_PIN, PIN_MODE_INPUT_PULLUP);
+		rt_pin_mode(KNOB_FEMALE_PIN, PIN_MODE_INPUT_PULLUP);
+		rt_pin_mode(KNOB_REAR_PIN, PIN_MODE_INPUT_PULLUP);
     
     /* 2. Initialize button objects */
     for (i = 0; i < BUTTON_TOTAL_COUNT; i++)
@@ -216,6 +220,15 @@ static void button_detect_press(rt_uint8_t btn_idx)
         case BUTTON_ID_HOME:
             current_state = !rt_pin_read(KEY_HOME_PIN);
             break;
+				case BUTTON_ID_KNOB_BUTTON:
+						current_state = !rt_pin_read(KNOB_BUTTON_PIN);
+						break;
+				case BUTTON_ID_KNOB_FEMALE:
+						current_state = !rt_pin_read(KNOB_FEMALE_PIN);
+						break;
+				case BUTTON_ID_KNOB_REAR:
+						current_state = !rt_pin_read(KNOB_REAR_PIN);
+						break;
         default:
             return;
     }
@@ -300,6 +313,15 @@ static void button_detect_press(rt_uint8_t btn_idx)
                             /* Next page: send 0xFFFFFFFE as special code for "next" */
                             button_send_page_change(0xFFFFFFFE);  
                             break;
+												case BUTTON_ID_KNOB_BUTTON:
+														user_action_send_cmd(ACTION_FLUSH_TOILET, 0);
+														break;
+												case BUTTON_ID_KNOB_FEMALE:
+														user_action_send_cmd(ACTION_CLEAN_FEMALE, 0);
+														break;
+												case BUTTON_ID_KNOB_REAR:
+														user_action_send_cmd(ACTION_CLEAN_REAR, 0);
+														break;
                             
                         default:
                             break;
