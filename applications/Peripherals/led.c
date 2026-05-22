@@ -160,7 +160,7 @@ void led_init(void)
                                             RT_NULL,
                                             512,
                                             29, // 低优先级
-                                            5);
+                                            20);
     if (s_led_refresh_thread) {
         rt_thread_startup(s_led_refresh_thread);
     }		

@@ -337,9 +337,9 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_HAL_DRIVER, RT_USING_LIBC, RT_USING_ARMLIBC, STM32F407xx, __CLK_TCK=RT_TICK_PER_SECOND, __RTTHREAD__, __STDC_LIMIT_MACROS</Define>
+              <Define>RT_USING_ARMLIBC, RT_USING_LIBC, USE_HAL_DRIVER, STM32F407xx, __STDC_LIMIT_MACROS, __CLK_TCK=RT_TICK_PER_SECOND, __RTTHREAD__</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\..\components\libc\posix\io\epoll;..\..\..\components\libc\posix\ipc;..\..\..\components\drivers\include;..\..\..\components\drivers\include;..\..\..\components\utilities\ulog\syslog;..\..\..\components\libc\compilers\common\extension\fcntl\octal;..\libraries\HAL_Drivers\drivers\drv_flash;..\..\..\components\drivers\include;..\..\..\libcpu\arm\common;..\..\..\libcpu\arm\cortex-m4;..\..\..\components\utilities\ymodem;..\..\..\components\drivers\include;..\..\..\components\drivers\phy;..\..\..\components\utilities\ulog;packages\u8g2-official-latest\csrc;..\..\..\components\drivers\spi;packages\stm32f4_hal_driver-latest\Inc;..\..\..\components\drivers\include;applications\Peripherals;..\..\..\components\libc\compilers\common\include;..\..\..\components\libc\posix\io\eventfd;..\..\..\components\drivers\include;..\..\..\components\drivers\smp_call;applications;..\..\..\components\fal\inc;packages\u8g2-official-latest\sys\rt-thread\port;..\..\..\components\drivers\hwcrypto;packages\stm32f4_hal_driver-latest\Inc\Legacy;..\..\..\components\drivers\include;board\ports;applications\Misc;..\..\..\components\net\utest;..\..\..\components\drivers\include;board\CubeMX_Config\Inc;..\libraries\HAL_Drivers\drivers;..\libraries\HAL_Drivers;..\..\..\components\drivers\include;packages\CMSIS-Core-latest\Include;.;..\..\..\components\drivers\include;packages\ota_downloader-latest;..\..\..\components\libc\compilers\common\extension;board;..\..\..\components\finsh;..\..\..\include;applications\System;..\libraries\HAL_Drivers\drivers\config;..\..\..\components\drivers\include;..\..\..\components\libc\posix\io\poll;packages\stm32f4_cmsis_driver-latest\Include</IncludePath>
+              <IncludePath>board;..\..\..\components\libc\compilers\common\include;packages\u8g2-official-latest\sys\rt-thread\port;packages\u8g2-official-latest\csrc;..\..\..\components\utilities\ymodem;..\..\..\components\drivers\include;packages\ota_downloader-latest;..\..\..\components\libc\posix\io\eventfd;..\..\..\libcpu\arm\cortex-m4;applications;.;packages\stm32f4_hal_driver-latest\Inc;applications\Misc;..\..\..\components\drivers\phy;..\..\..\components\libc\posix\ipc;..\..\..\components\libc\posix\io\poll;board\ports;..\..\..\components\utilities\ulog\syslog;..\..\..\components\drivers\spi;..\..\..\components\drivers\include;..\..\..\components\utilities\ulog;..\..\..\components\drivers\include;..\..\..\components\fal\inc;packages\stm32f4_hal_driver-latest\Inc\Legacy;packages\stm32f4_cmsis_driver-latest\Include;..\..\..\components\libc\compilers\common\extension;..\libraries\HAL_Drivers\drivers;..\..\..\libcpu\arm\common;..\libraries\HAL_Drivers\drivers\drv_flash;..\..\..\components\drivers\include;..\libraries\HAL_Drivers\drivers\config;..\..\..\components\drivers\include;..\..\..\include;..\..\..\components\drivers\include;..\..\..\components\drivers\include;board\CubeMX_Config\Inc;..\..\..\components\drivers\include;..\..\..\components\drivers\include;..\..\..\components\libc\posix\io\epoll;applications\Peripherals;..\..\..\components\drivers\include;..\libraries\HAL_Drivers;..\..\..\components\drivers\include;..\..\..\components\net\utest;applications\System;..\..\..\components\libc\compilers\common\extension\fcntl\octal;..\..\..\components\drivers\hwcrypto;..\..\..\components\drivers\smp_call;..\..\..\components\finsh;packages\CMSIS-Core-latest\Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -384,84 +384,9 @@
           <GroupName>Applications</GroupName>
           <Files>
             <File>
-              <FileName>zltech_can_motor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\zltech_can_motor.c</FilePath>
-            </File>
-            <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>applications\main.c</FilePath>
-            </File>
-            <File>
-              <FileName>MahonyAhrs.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Misc\MahonyAhrs.c</FilePath>
-            </File>
-            <File>
-              <FileName>qmi8658.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\qmi8658.c</FilePath>
-            </File>
-            <File>
-              <FileName>car_action.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\System\car_action.c</FilePath>
-            </File>
-            <File>
-              <FileName>monitor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\System\monitor.c</FilePath>
-            </File>
-            <File>
-              <FileName>wc_drv.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\wc_drv.c</FilePath>
-            </File>
-            <File>
-              <FileName>buzzer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\buzzer.c</FilePath>
-            </File>
-            <File>
-              <FileName>packet_handle.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\System\packet_handle.c</FilePath>
-            </File>
-            <File>
-              <FileName>user_action.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\System\user_action.c</FilePath>
-            </File>
-            <File>
-              <FileName>uart_packet.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\uart_packet.c</FilePath>
-            </File>
-            <File>
-              <FileName>led.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\led.c</FilePath>
-            </File>
-            <File>
-              <FileName>button.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\button.c</FilePath>
-            </File>
-            <File>
-              <FileName>ultrasonic_hc_sr04.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\ultrasonic_hc_sr04.c</FilePath>
-            </File>
-            <File>
-              <FileName>print_utils.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Misc\print_utils.c</FilePath>
-            </File>
-            <File>
-              <FileName>ultrasonic_485.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>applications\Peripherals\ultrasonic_485.c</FilePath>
             </File>
             <File>
               <FileName>oled_handle.c</FileName>
@@ -469,14 +394,89 @@
               <FilePath>applications\System\oled_handle.c</FilePath>
             </File>
             <File>
-              <FileName>irm_8601m2.c</FileName>
+              <FileName>uart_packet.c</FileName>
               <FileType>1</FileType>
-              <FilePath>applications\Peripherals\irm_8601m2.c</FilePath>
+              <FilePath>applications\Peripherals\uart_packet.c</FilePath>
+            </File>
+            <File>
+              <FileName>ir_receiver.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\ir_receiver.c</FilePath>
+            </File>
+            <File>
+              <FileName>qmi8658.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\qmi8658.c</FilePath>
+            </File>
+            <File>
+              <FileName>MahonyAhrs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Misc\MahonyAhrs.c</FilePath>
+            </File>
+            <File>
+              <FileName>print_utils.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Misc\print_utils.c</FilePath>
+            </File>
+            <File>
+              <FileName>packet_handle.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\System\packet_handle.c</FilePath>
+            </File>
+            <File>
+              <FileName>zltech_can_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\zltech_can_motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>wc_drv.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\wc_drv.c</FilePath>
             </File>
             <File>
               <FileName>checksum.c</FileName>
               <FileType>1</FileType>
               <FilePath>applications\Misc\checksum.c</FilePath>
+            </File>
+            <File>
+              <FileName>buzzer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\buzzer.c</FilePath>
+            </File>
+            <File>
+              <FileName>monitor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\System\monitor.c</FilePath>
+            </File>
+            <File>
+              <FileName>user_action.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\System\user_action.c</FilePath>
+            </File>
+            <File>
+              <FileName>button.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\button.c</FilePath>
+            </File>
+            <File>
+              <FileName>car_action.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\System\car_action.c</FilePath>
+            </File>
+            <File>
+              <FileName>ultrasonic_hc_sr04.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\ultrasonic_hc_sr04.c</FilePath>
+            </File>
+            <File>
+              <FileName>led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\led.c</FilePath>
+            </File>
+            <File>
+              <FileName>ultrasonic_485.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>applications\Peripherals\ultrasonic_485.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1902,6 +1902,11 @@
               <FilePath>..\..\..\components\fal\src\fal.c</FilePath>
             </File>
             <File>
+              <FileName>fal_rtt.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\components\fal\src\fal_rtt.c</FilePath>
+            </File>
+            <File>
               <FileName>fal_flash.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\components\fal\src\fal_flash.c</FilePath>
@@ -1910,11 +1915,6 @@
               <FileName>fal_partition.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\components\fal\src\fal_partition.c</FilePath>
-            </File>
-            <File>
-              <FileName>fal_rtt.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\components\fal\src\fal_rtt.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1927,14 +1927,14 @@
               <FilePath>..\..\..\components\finsh\shell.c</FilePath>
             </File>
             <File>
-              <FileName>msh.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\components\finsh\msh.c</FilePath>
-            </File>
-            <File>
               <FileName>msh_parse.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\components\finsh\msh_parse.c</FilePath>
+            </File>
+            <File>
+              <FileName>msh.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\components\finsh\msh.c</FilePath>
             </File>
             <File>
               <FileName>cmd.c</FileName>
@@ -2792,6 +2792,16 @@
           <GroupName>klibc</GroupName>
           <Files>
             <File>
+              <FileName>rt_vsscanf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\src\klibc\rt_vsscanf.c</FilePath>
+            </File>
+            <File>
+              <FileName>kstdio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\src\klibc\kstdio.c</FilePath>
+            </File>
+            <File>
               <FileName>kerrno.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\src\klibc\kerrno.c</FilePath>
@@ -2800,16 +2810,6 @@
               <FileName>kstring.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\src\klibc\kstring.c</FilePath>
-            </File>
-            <File>
-              <FileName>kstdio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\src\klibc\kstdio.c</FilePath>
-            </File>
-            <File>
-              <FileName>rt_vsscanf.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\src\klibc\rt_vsscanf.c</FilePath>
             </File>
             <File>
               <FileName>rt_vsnprintf_tiny.c</FileName>
@@ -2877,79 +2877,9 @@
           <GroupName>STM32F4-HAL</GroupName>
           <Files>
             <File>
-              <FileName>stm32f4xx_hal_pwr_ex.c</FileName>
+              <FileName>stm32f4xx_hal_iwdg.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_pwr_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_flash.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_i2c.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_i2c.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_spi.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_spi.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_rcc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_rcc.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_tim_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_tim_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_cryp_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cryp_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_flash_ramfunc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash_ramfunc.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_cec.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cec.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_dma_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_dma_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_adc_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_adc_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_adc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_adc.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_lptim.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_lptim.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_can.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_can.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_iwdg.c</FilePath>
             </File>
             <File>
               <FileName>stm32f4xx_hal_cryp.c</FileName>
@@ -2957,14 +2887,9 @@
               <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cryp.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_wwdg.c</FileName>
+              <FileName>stm32f4xx_hal.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_wwdg.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_crc.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_crc.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal.c</FilePath>
             </File>
             <File>
               <FileName>stm32f4xx_hal_usart.c</FileName>
@@ -2972,24 +2897,9 @@
               <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_usart.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_i2c_ex.c</FileName>
+              <FileName>stm32f4xx_hal_adc_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_i2c_ex.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_rng.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_rng.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_tim.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_tim.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_uart.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_uart.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_adc_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32f4xx_hal_gpio.c</FileName>
@@ -2997,29 +2907,19 @@
               <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_gpio.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_flash_ex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash_ex.c</FilePath>
-            </File>
-            <File>
               <FileName>stm32f4xx_hal_rcc_ex.c</FileName>
               <FileType>1</FileType>
               <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_rcc_ex.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_dma.c</FileName>
+              <FileName>stm32f4xx_hal_tim_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_dma.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_tim_ex.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_qspi.c</FileName>
+              <FileName>stm32f4xx_hal_i2c_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_qspi.c</FilePath>
-            </File>
-            <File>
-              <FileName>stm32f4xx_hal_cortex.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cortex.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_i2c_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32f4xx_hal_pwr.c</FileName>
@@ -3027,9 +2927,109 @@
               <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_pwr.c</FilePath>
             </File>
             <File>
-              <FileName>stm32f4xx_hal_iwdg.c</FileName>
+              <FileName>stm32f4xx_hal_dma.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_iwdg.c</FilePath>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_dma.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_i2c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_i2c.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_flash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_crc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_crc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_rcc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_rcc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_flash_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash_ex.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_cryp_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cryp_ex.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_qspi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_qspi.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_tim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_tim.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_rng.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_rng.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_dma_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_dma_ex.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_pwr_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_pwr_ex.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_flash_ramfunc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_flash_ramfunc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_lptim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_lptim.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_adc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_adc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_cec.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cec.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_wwdg.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_wwdg.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f4xx_hal_cortex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\stm32f4_hal_driver-latest\Src\stm32f4xx_hal_cortex.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -3037,164 +3037,9 @@
           <GroupName>u8g2</GroupName>
           <Files>
             <File>
-              <FileName>mui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\mui.c</FilePath>
-            </File>
-            <File>
               <FileName>u8x8_cad.c</FileName>
               <FileType>1</FileType>
               <FilePath>packages\u8g2-official-latest\csrc\u8x8_cad.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_selection_list.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_selection_list.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_byte.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_byte.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_circle.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_circle.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_setup.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_setup.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_input_value.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_input_value.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_debounce.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_debounce.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_kerning.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_kerning.c</FilePath>
-            </File>
-            <File>
-              <FileName>ssd1306_12864_4wire_hw_spi_example.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\sys\rt-thread\examples\ssd1306_12864_4wire_hw_spi_example.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_intersection.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_intersection.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_d_ssd1315_128x64_noname.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_d_ssd1315_128x64_noname.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_box.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_box.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_ll_hvline.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_ll_hvline.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_u16toa.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_u16toa.c</FilePath>
-            </File>
-            <File>
-              <FileName>mui_u8g2.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\mui_u8g2.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_d_ssd1306_128x64_noname.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_d_ssd1306_128x64_noname.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_port.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\sys\rt-thread\port\u8g2_port.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_fonts.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_fonts.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_d_memory.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_d_memory.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_capture.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_capture.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_cleardisplay.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_cleardisplay.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_buffer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_buffer.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_input_value.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_input_value.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_font.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_font.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_display.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_display.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_bitmap.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_bitmap.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8log_u8g2.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8log_u8g2.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_d_setup.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_d_setup.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_8x8.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_8x8.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8g2_button.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_button.c</FilePath>
-            </File>
-            <File>
-              <FileName>u8x8_gpio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_gpio.c</FilePath>
             </File>
             <File>
               <FileName>u8g2_line.c</FileName>
@@ -3202,24 +3047,24 @@
               <FilePath>packages\u8g2-official-latest\csrc\u8g2_line.c</FilePath>
             </File>
             <File>
-              <FileName>u8x8_string.c</FileName>
+              <FileName>u8x8_d_ssd1306_128x64_noname.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_string.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_d_ssd1306_128x64_noname.c</FilePath>
             </File>
             <File>
-              <FileName>u8log_u8x8.c</FileName>
+              <FileName>u8g2_ll_hvline.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8log_u8x8.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_ll_hvline.c</FilePath>
             </File>
             <File>
-              <FileName>u8g2_polygon.c</FileName>
+              <FileName>mui.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_polygon.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\mui.c</FilePath>
             </File>
             <File>
-              <FileName>u8g2_setup.c</FileName>
+              <FileName>u8x8_fonts.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_setup.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_fonts.c</FilePath>
             </File>
             <File>
               <FileName>u8x8_selection_list.c</FileName>
@@ -3237,9 +3082,14 @@
               <FilePath>packages\u8g2-official-latest\csrc\u8log.c</FilePath>
             </File>
             <File>
-              <FileName>u8g2_message.c</FileName>
+              <FileName>u8g2_cleardisplay.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8g2_message.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_cleardisplay.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_message.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_message.c</FilePath>
             </File>
             <File>
               <FileName>u8g2_arc.c</FileName>
@@ -3247,9 +3097,129 @@
               <FilePath>packages\u8g2-official-latest\csrc\u8g2_arc.c</FilePath>
             </File>
             <File>
-              <FileName>u8x8_message.c</FileName>
+              <FileName>u8x8_d_ssd1315_128x64_noname.c</FileName>
               <FileType>1</FileType>
-              <FilePath>packages\u8g2-official-latest\csrc\u8x8_message.c</FilePath>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_d_ssd1315_128x64_noname.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_bitmap.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_bitmap.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_u16toa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_u16toa.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_intersection.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_intersection.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_display.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_display.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_message.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_message.c</FilePath>
+            </File>
+            <File>
+              <FileName>ssd1306_12864_4wire_hw_spi_example.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\sys\rt-thread\examples\ssd1306_12864_4wire_hw_spi_example.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_string.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_string.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_buffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_buffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8log_u8x8.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8log_u8x8.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_kerning.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_kerning.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_capture.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_capture.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_d_setup.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_d_setup.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_setup.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_setup.c</FilePath>
+            </File>
+            <File>
+              <FileName>mui_u8g2.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\mui_u8g2.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_debounce.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_debounce.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_box.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_box.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_selection_list.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_selection_list.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_port.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\sys\rt-thread\port\u8g2_port.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_gpio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_gpio.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_polygon.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_polygon.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_circle.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_circle.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_byte.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_byte.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_font.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_font.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_8x8.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_8x8.c</FilePath>
             </File>
             <File>
               <FileName>u8g2_hvline.c</FileName>
@@ -3260,6 +3230,36 @@
               <FileName>u8x8_u8toa.c</FileName>
               <FileType>1</FileType>
               <FilePath>packages\u8g2-official-latest\csrc\u8x8_u8toa.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_input_value.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_input_value.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_d_memory.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_d_memory.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8log_u8g2.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8log_u8g2.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_button.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_button.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8x8_input_value.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8x8_input_value.c</FilePath>
+            </File>
+            <File>
+              <FileName>u8g2_setup.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>packages\u8g2-official-latest\csrc\u8g2_setup.c</FilePath>
             </File>
           </Files>
         </Group>

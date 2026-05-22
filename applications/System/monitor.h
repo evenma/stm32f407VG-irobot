@@ -67,4 +67,10 @@ uint32_t monitor_get_ultrasonic_baudrate(void);
 /* 红外对准检测使能标志（由 car_action 控制）*/
 extern rt_bool_t g_ir_alignment_enable;
 
+/* 获取是否正在充电 */
+rt_bool_t monitor_is_charging(void);
+
+/* 获取充电已持续秒数（未充电时返回0）*/
+uint32_t monitor_get_charge_seconds(void);
+
 #endif /* PERIPHERALS_MONITOR_H__ */

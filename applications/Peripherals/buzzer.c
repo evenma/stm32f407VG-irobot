@@ -164,7 +164,7 @@ void buzzer_init(void)
                                         RT_NULL,
                                         BUZZER_THREAD_STACK_SIZE,
                                         BUZZER_THREAD_PRIORITY,
-                                        5);
+                                        20);
     if (s_buzzer.thread == RT_NULL)
     {
         rt_kprintf("[BUZZER] Failed to create thread\n");

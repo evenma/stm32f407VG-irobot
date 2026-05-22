@@ -49,9 +49,12 @@ static uint32_t s_loaded_ultrasonic_baudrate = 0;
 extern int g_oled_battery_mv;
 extern int g_charge_power_mw;
 
+static uint32_t s_charge_start_tick = 0;      // 充电开始时刻（毫秒）
+static rt_bool_t s_charging  = RT_FALSE;       // 是否正在充电
+
 /* ========== Thread Configuration ========== */
 #define MONITOR_THREAD_STACK_SIZE   2048
-#define MONITOR_THREAD_PRIORITY     18
+#define MONITOR_THREAD_PRIORITY     14
 
 #define MONITOR_SAMPLE_INTERVAL_MS  50          /* 采样间隔 50ms */
 #define MONITOR_FILTER_WINDOW_SIZE  10          /* 滤波窗口大小 */
@@ -523,8 +526,6 @@ static void monitor_thread_entry(void *parameter)
 		static uint16_t last_left_cnt = 0, last_right_cnt = 0;       // 左右红外接收管检测
 		static uint8_t left_timeout_cnt = 0, right_timeout_cnt = 0;
 		
-		static uint32_t charge_start_tick = 0;      // 充电开始时刻（毫秒）
-		static rt_bool_t charging = RT_FALSE;       // 是否正在充电
 		static rt_bool_t last_heater_state = RT_FALSE; // 上一次加热器状态
  
 		rt_thread_mdelay(5000);    // 等待系统启动稳定后开启
@@ -634,7 +635,7 @@ static void monitor_thread_entry(void *parameter)
 //									if (diff > 5) {
 //											s_charge_power_mw = (rt_uint32_t)(((int64_t)diff * s_charger_mv) / 10);
 							    // 阈值调整为 25mV（对应 0.5A 电流），可根据实际噪声调整
-										if (diff > 15) {
+									if (diff > 5) {//if (diff > 15) {
 												// 功率（毫瓦）= diff_mV * s_charger_mv / 50
 												s_charge_power_mw = (rt_uint32_t)(((int64_t)diff * s_charger_mv) / 50);
 									} else {
@@ -754,7 +755,7 @@ static void monitor_thread_entry(void *parameter)
 				}
 //				// 充电上报 变化触发
 				charger_connected = (s_charger_mv > 5000);
-				if (charger_connected && rt_pin_read(CHARGER_CONTROL_PIN) == PIN_HIGH && s_charge_power_mw > 0) {
+				if (charger_connected && rt_pin_read(CHARGER_CONTROL_PIN) == PIN_HIGH ) {
 						charger_event = 2; // 充电中
 				} else if (charger_connected) {
 						charger_event = 1; // 连接未充电
@@ -770,29 +771,29 @@ static void monitor_thread_entry(void *parameter)
 				}
 				// 充电状态变化处理（控制 LED0 和 充电超时记录）
 				if (charger_event == 2) {
-						if (!charging) {
+						if (!s_charging) {
 								// 开始充电
-								charging = RT_TRUE;
-								charge_start_tick = rt_tick_get_millisecond();
+								s_charging = RT_TRUE;
+								s_charge_start_tick = rt_tick_get_millisecond();
 								led_set_color(LED_IDX_CHARGER, LED_COLOR_ON);   // 点亮充电指示灯
 								rt_kprintf("[MONITOR] Charging started, timeout set to 8 hours\n");
 						}
 				} else {
-						if (charging) {
+						if (s_charging) {
 								// 充电结束
-								charging = RT_FALSE;
+								s_charging = RT_FALSE;
 								led_set_color(LED_IDX_CHARGER, LED_COLOR_OFF);  // 关闭充电指示灯
 								rt_kprintf("[MONITOR] Charging stopped\n");
 						}
 				}
 				// 充电超时检查
-				if (charging) {
+				if (s_charging) {
 						uint32_t now = rt_tick_get_millisecond();
-						if (now - charge_start_tick >= CHARGE_TIMEOUT_MS) {
+						if (now - s_charge_start_tick >= CHARGE_TIMEOUT_MS) {
 								// 超时，强制关闭充电
 								rt_pin_write(CHARGER_CONTROL_PIN, PIN_LOW);
 								led_set_color(LED_IDX_CHARGER, LED_COLOR_OFF);
-								charging = RT_FALSE;
+								s_charging = RT_FALSE;
 								rt_kprintf("[MONITOR] Charging timeout (8 hours), force stop\n");
 								// 可选：将 charger_event 强制设为断开，避免重复上报
 						}
@@ -890,7 +891,7 @@ static void monitor_thread_entry(void *parameter)
 			uint8_t right_status = ir_get_right_status();
 				
 // 左通道：如果状态已是0，则直接重置计数器，无需超时清除
-				if (left_status == 0) {
+			if (left_status == 0) {
 					left_timeout_cnt = 0;
 			} else {
 					uint16_t left_cnt = ir_get_left_match_cnt();
@@ -899,7 +900,7 @@ static void monitor_thread_entry(void *parameter)
 							left_timeout_cnt = 0;
 					} else {
 							left_timeout_cnt++;
-							if (left_timeout_cnt >= 10) {  // 500ms 无新数据
+							if (left_timeout_cnt >= 20) {  // 1000ms 无新数据
 									ir_clear_left_status();
 									rt_kprintf("[MONITOR] Left IR timeout, cleared\n");
 									left_timeout_cnt = 0;  // 重置，避免重复清除
@@ -918,7 +919,7 @@ static void monitor_thread_entry(void *parameter)
 							right_timeout_cnt = 0;
 					} else {
 							right_timeout_cnt++;
-							if (right_timeout_cnt >= 10) {
+							if (right_timeout_cnt >= 20) {
 									ir_clear_right_status();
 									rt_kprintf("[MONITOR] Right IR timeout, cleared\n");
 									right_timeout_cnt = 0;
@@ -967,6 +968,19 @@ rt_uint32_t monitor_get_charger_sample_voltage(void)
 void change_battery_limit(uint16_t limit)
 {
     battery_min_limit = limit;
+}
+
+rt_bool_t monitor_is_charging(void)
+{
+    return s_charging;
+}
+
+uint32_t monitor_get_charge_seconds(void)
+{
+    if (!s_charging) return 0;
+    uint32_t now = rt_tick_get_millisecond();
+    uint32_t elapsed_ms = now - s_charge_start_tick;
+    return elapsed_ms / 1000;
 }
 
 

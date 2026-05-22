@@ -658,7 +658,18 @@ static void render_home_page(u8g2_t* u8g2)
 		rt_snprintf(bat_str, sizeof(bat_str), "Power: %dW", g_charge_power_mw/1000);
     u8g2_DrawStr(u8g2, 8, y, bat_str);
     y += 10;
-    u8g2_DrawStr(u8g2, 8, y, "Mode: Standby");
+		    // 显示充电计时
+    if (monitor_is_charging()) {
+        uint32_t sec = monitor_get_charge_seconds();
+        uint32_t hours = sec / 3600;
+        uint32_t minutes = (sec % 3600) / 60;
+        uint32_t seconds = sec % 60;
+        char time_str[20];
+        rt_snprintf(time_str, sizeof(time_str), "Charge: %02d:%02d:%02d", hours, minutes, seconds);
+        u8g2_DrawStr(u8g2, 8, y, time_str);
+    } else {
+        u8g2_DrawStr(u8g2, 8, y, "Not Charging");
+    }
 
 }
 
