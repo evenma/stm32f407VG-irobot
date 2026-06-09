@@ -23,6 +23,7 @@
 #include "button.h"
 #include "global_conf.h"
 #include "user_action.h"
+#include "asr_action.h"
 
 /* 将系统 tick 转换为毫秒 */
 #define rt_tick_get_millisecond() (rt_tick_get()) //(rt_tick_get() * 1000 / RT_TICK_PER_SECOND)   // 本系统的 RT_TICK_PER_SECOND = 1000
@@ -274,7 +275,16 @@ static void button_detect_press(rt_uint8_t btn_idx)
                         case BUTTON_ID_HOME:
                             button_trigger_home_signal();  // Wake up navigation task
                             break;
-                        
+ 
+												case BUTTON_ID_SW5:
+														/* 切换单机模式 / 正常模式 */
+														if (asr_action_is_single_mode()) {
+																asr_action_set_single_mode(RT_FALSE);
+														} else {
+																asr_action_set_single_mode(RT_TRUE);
+														}
+														break;	
+														
                         default:
                             /* No page change for non-HOME long press */
                             break;

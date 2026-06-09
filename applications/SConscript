@@ -14,6 +14,10 @@ for root, dirs, files in os.walk(cwd):
 subdirs = ['Peripherals', 'System', 'Misc']
 CPPPATH = [cwd] + [os.path.join(cwd, d) for d in subdirs if os.path.isdir(os.path.join(cwd, d))]
 
+ble_path = os.path.join(cwd, 'Peripherals', 'ble')
+if os.path.isdir(ble_path):
+    CPPPATH.append(ble_path)
+
 group = DefineGroup('Applications', src, depend = [''], CPPPATH = CPPPATH)
 
 Return('group')

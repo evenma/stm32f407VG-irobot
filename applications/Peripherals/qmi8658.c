@@ -273,6 +273,30 @@ static int16_t imu_i2c_read_word(uint8_t reg)
     return (int16_t)((buffer[1] << 8) | buffer[0]);
 }
 
+void imu_send_stop_condition(void)
+{
+    if (s_i2c_dev == RT_NULL) return;
+
+    uint8_t buffer[12];
+    struct rt_i2c_msg msgs[2];
+    uint8_t buf = QMI8658_REG_ACC_OUT_L;
+
+    msgs[0].addr  = QMI8658_SLAVE_ADDR_H;
+    msgs[0].flags = RT_I2C_WR;
+    msgs[0].buf   = &buf;
+    msgs[0].len   = 1;
+
+    msgs[1].addr  = QMI8658_SLAVE_ADDR_H;
+    msgs[1].flags = RT_I2C_RD;
+    msgs[1].buf   = buffer;
+    msgs[1].len   = 12;
+
+    /* 忽略返回值，目的是产生一个起始条件 + NACK + 停止条件 */
+    rt_i2c_transfer(s_i2c_dev, msgs, 2);
+    /* 此时总线已释放 */
+    rt_thread_mdelay(10);
+}
+
 //发送数据
 void IIC_send_byte(uint8_t txd)
 {
@@ -1038,6 +1062,9 @@ int qmi8658_init(void)
             rt_kprintf("[QMI8658] ERROR: Failed to open I2C device!\n");
             return -RT_ERROR;
         }   
+	 /* 发送一个停止条件，清除之前可能遗留的未完成传输 */			
+		imu_send_stop_condition();	
+				
     if(qmi8658_validate_connection(5) != RT_EOK)
     {
         rt_kprintf("[QMI8658] ERROR: Connection validation failed!\n");

@@ -64,10 +64,12 @@ rt_uint16_t wc_pipe_distributor_get_position(void);
 /* ========== 紫外灯 ========== */
 void wc_uv_light_on(void);
 void wc_uv_light_off(void);
+rt_bool_t wc_uv_light_is_on(void);   // 返回紫外灯是否开启
 
 /* ========== 红外灯 ========== */
 void wc_ir_light_on(void);
 void wc_ir_light_off(void);
+rt_bool_t wc_ir_light_is_on(void);   // 返回红外灯是否开启
 
 /* ========== 暖风风扇 ========== */
 void wc_warm_fan_on(void);

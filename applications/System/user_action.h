@@ -99,5 +99,16 @@ void user_action_sewage_pump(void);
 /* 水箱水温设定 单位0.1℃ */
 void user_action_set_water_target_temp(uint16_t temp_0p1c);
 uint16_t user_action_get_water_target_temp(void);
+/**
+ * @brief 设置清洁模式（直接指定）
+ * @param mode 要设置的清洁模式（CLEAN_MODE_FIXED 或 CLEAN_MODE_MASSAGE）
+ */
+void user_action_set_clean_mode(CleanMode_t mode);
+
+/**
+ * @brief 强制停止所有马桶动作（不依赖事件机制，直接关闭硬件）
+ */
+void user_action_force_stop(void);
+
 #endif /* __USER_ACTION_H__ */
 

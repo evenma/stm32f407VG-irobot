@@ -179,8 +179,8 @@ typedef struct {
 
 // 3. 语音模块指令 (功能号 PKT_FUNC_VOICE) — 预留
 typedef struct {
-    uint8_t command_id;
-    uint8_t confidence;         // 置信度0-100
+    uint8_t command_id;					// 命令词 ID
+//		char    text[64];           // JSON 字符串，最大 63 字符（结束符 '\0'）
 } PacketReportVoiceTypeDef;
 
 #pragma pack()

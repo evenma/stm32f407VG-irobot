@@ -31,6 +31,7 @@
 #include "packet_handle.h"
 #include "car_action.h"
 #include "ir_receiver.h"
+#include "asr_action.h"
 
 #define LOG_TAG "main.tag"
 #define LOG_LVL LOG_LVL_DBG
@@ -75,6 +76,7 @@ int main(void)
 	monitor_init();   // 优先初始化，因为读取data分区参数设置	
 	
 	ir_receiver_init();
+	asr_action_init();
 	buzzer_beep_once();  // 初始化完毕，蜂鸣一次
 		led_off_all();
     while (1)

@@ -341,6 +341,11 @@ void wc_uv_light_off(void)
     rt_pin_write(UV_LED_PIN, PIN_LOW);
 }
 
+rt_bool_t wc_uv_light_is_on(void)
+{
+    return rt_pin_read(UV_LED_PIN) == PIN_HIGH;
+} 
+
 /* 红外灯 */
 void wc_ir_light_on(void)
 {
@@ -349,6 +354,11 @@ void wc_ir_light_on(void)
 void wc_ir_light_off(void)
 {
     rt_pin_write(IR_HEAT_PIN, PIN_LOW);
+}
+rt_bool_t wc_ir_light_is_on(void)
+{
+    // 读取控制引脚电平，高电平为开，低电平为关
+    return rt_pin_read(IR_HEAT_PIN) == PIN_HIGH;
 }
 
 /* 暖风风扇 */

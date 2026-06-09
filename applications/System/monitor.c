@@ -16,6 +16,7 @@
 #include "wc_drv.h"
 #include "user_action.h"
 #include "ir_receiver.h"
+#include "asr_wonderecho.h"
 
 // 温度-ADC 查找表 (温度: -5°C ~ 50°C, 步长 1°C)
 // ADC 值对应温度升高而递减
@@ -134,6 +135,16 @@ static uint32_t water_temp_report_cnt = 0;
 
 #define HEATER_POWER_STABLE_DELAY_MS  3000       // 等待3秒稳定
 #define CHARGE_TIMEOUT_MS   (8 * 3600 * 1000)   // 8小时超时（毫秒）
+
+/* 灯超时自动关闭时间（毫秒）*/
+#define LAMP_AUTO_OFF_TIMEOUT_MS   (30 * 60 * 1000)   // 30分钟
+
+static rt_tick_t s_ir_on_tick = 0;        // IR 灯开启的时刻（毫秒）
+static rt_bool_t s_ir_tracking = RT_FALSE; // 是否正在计时
+static rt_tick_t s_uv_on_tick = 0;
+static rt_bool_t s_uv_tracking = RT_FALSE;
+
+
 /**
  * @brief 保存校准数据到 Flash 分区
  */
@@ -587,6 +598,7 @@ static void monitor_thread_entry(void *parameter)
 											led_set_battery_low(RT_TRUE);
 											s_last_low_battery = RT_TRUE;
 											rt_kprintf("[MONITOR]low battery\n");
+											asr_speak(ASR_TYPE_ANNOUNCER, TALK_BATT_LOW);
 									}
 								// 未报警或报警次数未满 10 次
 								if (s_alarm_count < 10) {
@@ -658,6 +670,9 @@ static void monitor_thread_entry(void *parameter)
 						}
 						if (low_level != s_water_low_level) {
 								led_set_water_low(low_level);
+								if(low_level){
+									asr_speak(ASR_TYPE_ANNOUNCER,TALK_WATER_LEVEL_LOW);									
+								}
 						}						
 						// 更新全局变量
 						s_water_high_level = high_level;
@@ -777,6 +792,7 @@ static void monitor_thread_entry(void *parameter)
 								s_charge_start_tick = rt_tick_get_millisecond();
 								led_set_color(LED_IDX_CHARGER, LED_COLOR_ON);   // 点亮充电指示灯
 								rt_kprintf("[MONITOR] Charging started, timeout set to 8 hours\n");
+								asr_speak(ASR_TYPE_ANNOUNCER,TALK_CHARGE_START);
 						}
 				} else {
 						if (s_charging) {
@@ -833,6 +849,9 @@ static void monitor_thread_entry(void *parameter)
 								if (rt_tick_get_millisecond() - heater_power_on_tick >= HEATER_POWER_STABLE_DELAY_MS) {
 										heater_power_stable_wait = 2;  // 稳定完成，可以正常控制
 										rt_kprintf("[MONITOR] Heater power stable, enable control\n");
+										if(s_charger_mv > 5000){
+											asr_speak(ASR_TYPE_ANNOUNCER,TALK_CONNECT_OK);	
+										}
 								}
 						}
 				} else {
@@ -900,7 +919,7 @@ static void monitor_thread_entry(void *parameter)
 							left_timeout_cnt = 0;
 					} else {
 							left_timeout_cnt++;
-							if (left_timeout_cnt >= 20) {  // 1000ms 无新数据
+							if (left_timeout_cnt >= 10) {  // 500ms 无新数据
 									ir_clear_left_status();
 									rt_kprintf("[MONITOR] Left IR timeout, cleared\n");
 									left_timeout_cnt = 0;  // 重置，避免重复清除
@@ -919,15 +938,62 @@ static void monitor_thread_entry(void *parameter)
 							right_timeout_cnt = 0;
 					} else {
 							right_timeout_cnt++;
-							if (right_timeout_cnt >= 20) {
+							if (right_timeout_cnt >= 10) {
 									ir_clear_right_status();
 									rt_kprintf("[MONITOR] Right IR timeout, cleared\n");
 									right_timeout_cnt = 0;
 							}
 					}
 					last_right_cnt = right_cnt;
-			}			
+			}	
+			
+				/* ========== IR 灯自动关闭 ========== */
+				if (wc_ir_light_is_on()) {
+						if (!s_ir_tracking) {
+								// 灯刚打开，开始计时
+								s_ir_on_tick = rt_tick_get_millisecond();
+								s_ir_tracking = RT_TRUE;
+								rt_kprintf("[MONITOR] IR light turned on, will auto-off in 30 minutes\n");
+						} else {
+								// 检查是否超时
+								if (rt_tick_get_millisecond() - s_ir_on_tick >= LAMP_AUTO_OFF_TIMEOUT_MS) {
+										rt_kprintf("[MONITOR] IR light auto-off (30 minutes reached)\n");
+										wc_ir_light_off();
+										s_ir_tracking = RT_FALSE;
+										// 可选：播报提示
+										// asr_action_speak_state(TALK_IR_AUTO_OFF);
+								}
+						}
+				} else {
+						// 灯已关闭，重置计时
+						if (s_ir_tracking) {
+								rt_kprintf("[MONITOR] IR light manually turned off, reset timer\n");
+								s_ir_tracking = RT_FALSE;
+						}
+				}
 
+				/* ========== UV 灯自动关闭 ========== */
+				if (wc_uv_light_is_on()) {
+						if (!s_uv_tracking) {
+								s_uv_on_tick = rt_tick_get_millisecond();
+								s_uv_tracking = RT_TRUE;
+								rt_kprintf("[MONITOR] UV light turned on, will auto-off in 30 minutes\n");
+						} else {
+								if (rt_tick_get_millisecond() - s_uv_on_tick >= LAMP_AUTO_OFF_TIMEOUT_MS) {
+										rt_kprintf("[MONITOR] UV light auto-off (30 minutes reached)\n");
+										wc_uv_light_off();
+										s_uv_tracking = RT_FALSE;
+										// 可选：播报提示
+										// asr_action_speak_state(TALK_UV_AUTO_OFF);
+								}
+						}
+				} else {
+						if (s_uv_tracking) {
+								rt_kprintf("[MONITOR] UV light manually turned off, reset timer\n");
+								s_uv_tracking = RT_FALSE;
+						}
+				}
+			
 			
         rt_thread_mdelay(MONITOR_SAMPLE_INTERVAL_MS);
     }
@@ -1041,10 +1107,10 @@ void monitor_init(void)
 		rt_pin_write(CHARGER_CONTROL_PIN, PIN_LOW);
 		
 		// 初始化水位状态
-    s_water_high_level = (rt_pin_read(WATER_LEVEL_HIGH_PIN) == PIN_LOW);
-    s_water_low_level  = (rt_pin_read(WATER_LEVEL_LOW_PIN)  == PIN_HIGH);
-    led_set_water_full(s_water_high_level);
-    led_set_water_low(s_water_low_level);
+//    s_water_high_level = (rt_pin_read(WATER_LEVEL_HIGH_PIN) == PIN_LOW);
+//    s_water_low_level  = (rt_pin_read(WATER_LEVEL_LOW_PIN)  == PIN_HIGH);
+//    led_set_water_full(s_water_high_level);
+//    led_set_water_low(s_water_low_level);
 }
 
 #ifdef RT_USING_MSH

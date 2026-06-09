@@ -47,6 +47,9 @@ static void process_cmd(CarCmd_t cmd, uint32_t param);
 
 rt_bool_t g_ir_alignment_enable = RT_FALSE;    // 电机运动时开启充电座红外接收管检测
 
+static uint32_t s_cmd_vel_param = 0;
+
+
 /* ==================== 辅助设备控制 ==================== */
 
 static void car_light_on(void)
@@ -195,8 +198,11 @@ static void process_cmd(CarCmd_t cmd, uint32_t param)
         case CAR_CMD_SET_VEL:
             {
 							// zlac_set_velocity(0, 0);  //下发零速 保存力矩的停，停并且带阻尼或者锁定位姿的停							
-                int16_t left = (int16_t)(param >> 16);
-                int16_t right = (int16_t)(param & 0xFFFF);
+//                int16_t left = (int16_t)(param >> 16);
+//                int16_t right = (int16_t)(param & 0xFFFF);
+							    int16_t left = (int16_t)(s_cmd_vel_param >> 16);
+									int16_t right = (int16_t)(s_cmd_vel_param & 0xFFFF);
+//							rt_kprintf("[car]speed left=%d,right=%d,parm=%d\n",left,right,param);
                 ret = zlac_set_velocity(left, right);
                 if (ret != RT_EOK) {
                     rt_kprintf("[CAR] Set velocity failed (err=%d)\n", ret);
@@ -431,8 +437,17 @@ void car_action_set_position_global(int32_t left, int32_t right)
 
 void car_action_send_cmd(CarCmd_t cmd, uint32_t param)
 {
-    rt_uint32_t msg = (uint32_t)cmd | (param << 8);
-    rt_mb_send(&s_car_mb, msg);
+//    rt_uint32_t msg = (uint32_t)cmd | (param << 8);
+//    rt_mb_send(&s_car_mb, msg);
+	    // 根据命令类型存储参数
+    switch (cmd) {
+        case CAR_CMD_SET_VEL:
+            s_cmd_vel_param = param;
+            break;
+        default:
+            break;
+    }
+    rt_mb_send(&s_car_mb, (rt_uint32_t)cmd);
 }
 
 /* ==================== MSH 测试命令 ==================== */

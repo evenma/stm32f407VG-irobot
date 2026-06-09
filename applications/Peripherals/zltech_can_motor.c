@@ -1015,6 +1015,18 @@ rt_err_t zlac_get_velocity_by_sdo(int16_t *left_rpm, int16_t *right_rpm)
 }
 
 /* ======================== 位置控制 (PDO 发送) I32 带正反 ======================== */
+/* 设置位置模式最大速度（单位 rpm）*/
+void set_position_mode_max_speed(uint16_t rpm)
+{
+    uint8_t data[4];
+    data[0] = rpm & 0xFF;
+    data[1] = (rpm >> 8) & 0xFF;
+    data[2] = 0;
+    data[3] = 0;
+    zlac_sdo_write(ZLAC_OD_PROFILE_VELOCITY, 1, data, 4);   // 左电机
+    zlac_sdo_write(ZLAC_OD_PROFILE_VELOCITY, 2, data, 4);   // 右电机
+    rt_kprintf("Set position mode max speed to %d rpm\n", rpm);
+}
 
 /* 绝对位置运动：目标位置为相对于原点的绝对脉冲数 I32 */
 static rt_err_t zlac_set_position_abs(int32_t left_pulses, int32_t right_pulses)

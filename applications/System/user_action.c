@@ -22,6 +22,8 @@ static rt_uint32_t s_action_mb_pool[4];
 static struct rt_event s_action_evt;
 static rt_thread_t s_action_thread;
 
+#define DEFAULT_SMALL_PUMP_DUTY  70
+
 /* ========== 全局配置 ========== */
 volatile UserActionConfig_t g_action_cfg = {
 //    .clean_rod_fixed_pos = 800,
@@ -172,6 +174,7 @@ static void action_flush_toilet(void)
 /* 执行清洁（通用） */
 static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t duration_sec, CleanType_t clean_type)
 {
+		wc_ir_light_off();
 	    rt_tick_t start_tick = rt_tick_get();
     rt_tick_t end_tick = start_tick + RT_TICK_PER_SECOND * duration_sec;
     rt_bool_t stopped = RT_FALSE;
@@ -203,6 +206,11 @@ static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t d
 		}
 
     /* 2. 开启小水泵 */
+		if (g_action_cfg.small_pump_duty < 50) {
+				g_action_cfg.small_pump_duty = DEFAULT_SMALL_PUMP_DUTY;   // 恢复默认值
+				wc_small_pump_set_duty(g_action_cfg.small_pump_duty);
+				rt_kprintf("[ACTION] Small pump duty too low, reset to %d\n", g_action_cfg.small_pump_duty);
+		}		
 		uint8_t duty = g_action_cfg.small_pump_duty;
     wc_small_pump_set_duty(duty);
     wc_small_pump_enable(RT_TRUE);
@@ -210,7 +218,7 @@ static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t d
     /* 3. 根据模式执行清洁动作 */
 		/* 按摩模式：往复运动，4mm 范围（约86步） */
 		rt_uint16_t current_pos = target_pos;
-		rt_bool_t forward = RT_TRUE;
+		rt_bool_t forward = RT_TRUE,last_forward = RT_TRUE;
 		rt_uint16_t step_delta = CLEAN_ROD_4MM_STEPS;		
 		
     while (rt_tick_get() < end_tick) {
@@ -317,11 +325,14 @@ static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t d
 					if (new_pos > CLEAN_ROD_MAX_STEPS) new_pos = CLEAN_ROD_MAX_STEPS;
 					if (new_pos < 0) new_pos = 0;
 					current_pos = (rt_uint16_t)new_pos;
-            wc_clean_rod_set_position(current_pos);
+          wc_clean_rod_set_position(current_pos);
+					if(last_forward == forward){  // 表示方向切换
             if (wait_stop_or_timeout(100) != 0) {
                 stopped = RT_TRUE;
                 break;
-            }
+            }						
+					}
+						last_forward = forward;
         }
     }
 
@@ -487,6 +498,8 @@ static void action_lid_open(void)
 {
     rt_kprintf("[ACTION] Lid open start\n");
     wc_lid_motor_open();
+		wc_ir_light_on();  // 打开红外理疗灯
+		wc_uv_light_off(); // 关闭紫外灯 防止伤害人体
     rt_tick_t start = rt_tick_get();
     rt_tick_t timeout = RT_TICK_PER_SECOND * 3;
     while (rt_tick_get() - start < timeout) {
@@ -510,6 +523,8 @@ static void action_lid_close(void)
 {
     rt_kprintf("[ACTION] Lid close start\n");
     wc_lid_motor_close();
+			wc_ir_light_off();
+		wc_uv_light_on();
     rt_tick_t start = rt_tick_get();
     rt_tick_t timeout = RT_TICK_PER_SECOND * 3;
     while (rt_tick_get() - start < timeout) {
@@ -780,12 +795,45 @@ void user_action_send_cmd(ActionCmd_t cmd, uint32_t param)
     rt_mb_send(&s_action_mb, msg);
 }
 
-void user_action_stop(void)
+void user_action_force_stop(void)
 {
-//    user_action_send_cmd(ACTION_STOP, 0);
+    rt_kprintf("[ACTION] Force stop all actions!\n");
+
+		stop_all_actions();
+
+    // 重置工作状态
+    s_work_status.flush_toilet = RT_FALSE;
+    s_work_status.clean_rear = RT_FALSE;
+    s_work_status.clean_female = RT_FALSE;
+    s_work_status.dry = RT_FALSE;
+
+    // 清除所有事件（防止残留）
+    rt_event_recv(&s_action_evt, 0xFFFFFFFF, RT_EVENT_FLAG_OR | RT_EVENT_FLAG_CLEAR,
+                  RT_WAITING_NO, RT_NULL);
+}
+
+void user_action_stop(void)
+{	
+	  static rt_tick_t last_stop_tick = 0;
+    static uint8_t stop_count = 0;
+
+    rt_tick_t now = rt_tick_get_millisecond();
+    if (now - last_stop_tick < 2000) {
+        stop_count++;
+    } else {
+        stop_count = 1;
+    }
+    last_stop_tick = now;
+
+    // 2秒内收到3次停止指令，强制停止
+    if (stop_count >= 3) {
+        user_action_force_stop();
+        stop_count = 0;
+        return;
+    }
+		
 		rt_event_send(&s_action_evt, EVENT_STOP);
 		rt_kprintf("[CMD] Stop event sent\n");
-	
 }
 
 void user_action_set_clean_rod_position(uint16_t pos)
@@ -825,6 +873,25 @@ void user_action_toggle_clean_mode(void)
 							 g_action_cfg.clean_mode == CLEAN_MODE_FIXED ? "Fixed" : "Massage");	
 			/* 如果清洁正在运行，发送模式切换事件 */
 		rt_event_send(&s_action_evt, EVENT_CLEAN_MODE_SW);
+}
+
+void user_action_set_clean_mode(CleanMode_t mode)
+{
+    if (mode != CLEAN_MODE_FIXED && mode != CLEAN_MODE_MASSAGE) {
+        rt_kprintf("[ACTION] Invalid clean mode: %d\n", mode);
+        return;
+    }
+    
+    if (g_action_cfg.clean_mode == mode) {
+        return;  // 模式相同，无需改变
+    }
+    
+    g_action_cfg.clean_mode = mode;
+    rt_kprintf("[ACTION] Clean mode set to %s\n",
+               mode == CLEAN_MODE_FIXED ? "Fixed" : "Massage");
+    
+    /* 如果清洁正在运行，发送模式切换事件 */
+    rt_event_send(&s_action_evt, EVENT_CLEAN_MODE_SW);
 }
 
 void user_action_sewage_pump(void)
@@ -952,15 +1019,16 @@ static void cmd_sewage(void)
 /* 命令: toilet set_pump_duty <0-100> */
 void cmd_set_pump_duty(int duty)
 {
-    if (duty < 0) duty = 0;
+		if(duty == 0) {
+			wc_small_pump_enable(RT_FALSE);
+			rt_kprintf("[CMD] Small pump turned off\n");
+			return;
+		}
+    if (duty < 50) duty = 50;
     if (duty > 100) duty = 100;
 		g_action_cfg.small_pump_duty = (rt_uint8_t)duty;
 		wc_small_pump_set_duty(g_action_cfg.small_pump_duty);
-		if(duty > 0){
-			wc_small_pump_enable(RT_TRUE);
-		}else{
-			wc_small_pump_enable(RT_FALSE);
-		}
+		wc_small_pump_enable(RT_TRUE);
     rt_kprintf("[CMD] Set small pump duty to %d\n", duty);
 }
 

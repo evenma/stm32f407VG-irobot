@@ -247,6 +247,7 @@ rt_err_t zlac_init_position_mode(ZlacPositionMode_t mode); /*初始化位置模�
 rt_err_t zlac_set_position_by_mode(int32_t left_pulses, int32_t right_pulses);
 rt_err_t zlac_get_position(int32_t *left_pulses, int32_t *right_pulses); 
 ZlacPositionMode_t zlac_get_position_mode(void); /* 获取当前设置的位置运动模式 */
+void set_position_mode_max_speed(uint16_t rpm);
 
 /* 状态读取*/
 rt_bool_t zlac_is_left_target_reached(void);	/* 查询左右电机是否已到达目标位置或目标速度（bit10 = 1 && bit12 = 1）*/

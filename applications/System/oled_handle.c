@@ -33,6 +33,7 @@
 //#endif
 #include "zltech_can_motor.h"
 #include "ir_receiver.h"
+#include "asr_action.h"
 /**
  * ========== Global Variables ==========
  */
@@ -644,21 +645,14 @@ static void render_home_page(u8g2_t* u8g2)
     char bat_str[20];
     rt_snprintf(bat_str, sizeof(bat_str), "Bat: %ld.%03dV", bat_v, bat_mv);
     u8g2_DrawStr(u8g2, 8, y, bat_str);
-    y += 8;
+    y += 10;
 
-	//进度条 计算电量百分比 (Vmin=16.8V, Vmax=25.2V)
-		int voltage = g_oled_battery_mv;
-		if (voltage > BATTERY_FULL_VOLTAGE_MV) voltage = BATTERY_FULL_VOLTAGE_MV;
-		if (voltage < BATTERY_NULL_VOLTAGE_MV) voltage = BATTERY_NULL_VOLTAGE_MV;
-		uint8_t bat_percent = (voltage - BATTERY_NULL_VOLTAGE_MV) * 100 / 
-													(BATTERY_FULL_VOLTAGE_MV - BATTERY_NULL_VOLTAGE_MV);
-		if (bat_percent > 100) bat_percent = 100;
-		draw_progress_bar(8, y, 112, 6, bat_percent);
-    y += 15;
-		rt_snprintf(bat_str, sizeof(bat_str), "Power: %dW", g_charge_power_mw/1000);
+// 第2行：充电功率
+    rt_snprintf(bat_str, sizeof(bat_str), "Power: %dW", g_charge_power_mw / 1000);
     u8g2_DrawStr(u8g2, 8, y, bat_str);
     y += 10;
-		    // 显示充电计时
+
+    // 第3行：充电计时
     if (monitor_is_charging()) {
         uint32_t sec = monitor_get_charge_seconds();
         uint32_t hours = sec / 3600;
@@ -670,7 +664,14 @@ static void render_home_page(u8g2_t* u8g2)
     } else {
         u8g2_DrawStr(u8g2, 8, y, "Not Charging");
     }
+    y += 10;
 
+    // 第4行：显示单机模式状态
+    if (asr_action_is_single_mode()) {
+        u8g2_DrawStr(u8g2, 8, y, "Mode: Single");
+    } else {
+        u8g2_DrawStr(u8g2, 8, y, "Mode: Normal");
+    }
 }
 
 static void render_ultrasonic_page(u8g2_t* u8g2)

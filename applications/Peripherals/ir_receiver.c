@@ -31,6 +31,7 @@
 #define MAX_SYMBOLS          30			// 1帧数组最大个数
 #define FRAME_TIMEOUT_MS     50    // 5*3(11)+5=20/pcs ; pcs*2 <200  pcs<100;
 #define FRAME_IDLE_TIMEOUT_MS 250   // 250ms 周期
+#define IR_RECIVE_TIMEOUT_MS 500     // 500ms超时未收到事件，清除上传数据
 
 /* 特征码 */
 static const uint8_t PATTERN_UP[SYMBOL_COUNT] =      {3,1,1,1,1,7,7,1,7,15};
