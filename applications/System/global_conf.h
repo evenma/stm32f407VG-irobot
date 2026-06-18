@@ -14,12 +14,20 @@
 #ifndef GLOBAL_CONF_H__
 #define GLOBAL_CONF_H__
 
+#include <rtthread.h>
+#include <rtdevice.h>
+#include <board.h>
 
 /* ======================== 系统版本 ======================== */
 #define APP_VERSION_MAJOR         1
 #define APP_VERSION_MINOR         0
 #define APP_VERSION_PATCH         2
-#define APP_VERSION_STRING        "1.0.2"
+#define APP_VERSION_STRING        "1.0.6"
+
+#define SOFTWARE_VERSION_STR 			APP_VERSION_STRING
+#define HARDWARE_VERSION_STR 			"HW_1.0"
+
+extern rt_uint8_t enableDebug;
 
 /* ========== ADC Device Name ========== */
 #define ADC_DEV_NAME                "adc1"
@@ -407,7 +415,7 @@ enum adc1_channel {
 #define BLE_UART_PORT             USART5
 #define BLE_RX_PIN                GET_PIN(C, 11)
 #define BLE_TX_PIN                GET_PIN(C, 12)
-#define BLE_WAKE_PIN              GET_PIN(D, 1)
+#define BLE_RESET_PIN              GET_PIN(D, 1)
 
 
 /* ======================== 过流检测配置 ======================== */

@@ -31,20 +31,19 @@
 #include <board.h>
 #include "mx_debug.h"
 
-#ifndef ULOG_USING_SYSLOG
-#define LOG_TAG              "module"
-#define LOG_LVL              LOG_LVL_DBG
+#define LOG_TAG "at_module"
+#define LOG_LVL LOG_LVL_DBG
 #include <ulog.h>
-#else
-#include <syslog.h>
-#endif /* ULOG_USING_SYSLOG */
 
 /******************************************************************************
  *                              Variable Definitions
  ******************************************************************************/
-#define BLE_nRST    GET_PIN(A,4)
+#ifndef BLE_RESET_PIN
+	#define BLE_nRST    GET_PIN(D,1)
+#endif
+
 #define BLE_BAUD	115200    // 5:115200
-static const char _BLE_NAME[10]= "QYRobotM";   // default
+static const char _BLE_NAME[10]= "QYRobotS";   // 自定义从机名称
 static char _ble_set_name[10];     
 static char _ble_name[BLE_DEVICE_NAME_MAXLEN];
 static char _fw_version[BLE_DEVICE_VERSION_MAXLEN];
@@ -142,7 +141,7 @@ restart:
 					}
 			}
 		}else{
-			if(strncmp(_ble_name,_BLE_NAME,sizeof(_BLE_NAME)) != 0 ){
+			if (strncmp(_ble_name, _BLE_NAME, strlen(_BLE_NAME)) != 0){
 				if(at_module_set_NAMB(_BLE_NAME) == kNoErr){
 						LOG_D("Success change name by factory name");	
 						rt_thread_delay(500);		
@@ -190,13 +189,13 @@ restart:
 		rt_thread_delay(500);
 	}
 	
-	cmd = at_module_get_notify();
-	if(cmd){
-		LOG_D("Notifies the connection disconnection event");
-	}else{
-		LOG_D("Disconnection events are not notified");	
-	}
-	rt_thread_delay(100);
+//	cmd = at_module_get_notify(); //oxff不是数字
+//	if(cmd){
+//		LOG_D("Notifies the connection disconnection event");
+//	}else{
+//		LOG_D("Disconnection events are not notified");	
+//	}
+//	rt_thread_delay(100);
 	
 	LOG_D("service uuid: %s",at_module_get_SERVICE_UUID());
 	rt_thread_delay(100);
@@ -214,9 +213,9 @@ restart:
 	rt_thread_delay(100);
 	LOG_D("Module broadcast interval time: %d mS",at_module_get_ADVI());
 	rt_thread_delay(100);
-	LOG_D("Module transmitting power: %d ,MAX 9:+6.4 dB",at_module_get_POWE());
-	rt_thread_delay(100);
-	LOG_D("Bluetooth device type: %d 0:Health class",at_module_get_TYPE());
+//	LOG_D("Module transmitting power: %d ,MAX 9:+6.4 dB",at_module_get_POWE()); // 9.9小数不是整数
+//	rt_thread_delay(100);
+//	LOG_D("Bluetooth device type: %d 0:Health class",at_module_get_TYPE());  // 0.0小数不是整数
 	
 	LOG_D("Module info retrieved");
 //	ATCmdParser_set_mode(0);

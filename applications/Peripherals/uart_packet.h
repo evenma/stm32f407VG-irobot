@@ -31,6 +31,7 @@ typedef enum {
 		PKT_FUNC_TOILET,    		 //e智能马桶控制 以及上报  水箱高低水位状态，水箱水温
     PKT_FUNC_ULTRASONIC,   //f 超声波距离上报 
 		PKT_FUNC_VOICE,        // 语音模块信息上报 
+		PKT_FUNC_OTA,            // 固件升级
     PKT_FUNC_NONE,
 } pkt_func_t;
 

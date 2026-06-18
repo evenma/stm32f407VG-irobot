@@ -59,5 +59,7 @@ uint16_t checksum_crc16(const uint8_t *buf, uint16_t len); /* CRC16 校验 */
 /**
  * @} 
  */
+uint16_t checksum_crc16_update(uint16_t crc, const uint8_t *data, uint16_t len);
+
 
 #endif /* __CHECK_H__ */

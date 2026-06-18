@@ -24,6 +24,9 @@
 #include "global_conf.h"
 #include "user_action.h"
 #include "asr_action.h"
+#include "uart_packet.h"
+#include "packet_reports.h"
+#include "ble_action.h"      // 包含 KEY_HOME 等枚举（或直接使用数值 0x3A）
 
 /* 将系统 tick 转换为毫秒 */
 #define rt_tick_get_millisecond() (rt_tick_get()) //(rt_tick_get() * 1000 / RT_TICK_PER_SECOND)   // 本系统的 RT_TICK_PER_SECOND = 1000
@@ -273,7 +276,15 @@ static void button_detect_press(rt_uint8_t btn_idx)
                     switch (btn_idx)
                     {
                         case BUTTON_ID_HOME:
-                            button_trigger_home_signal();  // Wake up navigation task
+                        //    button_trigger_home_signal();  // Wake up navigation task
+															{
+																	// 发送 HOME 按键事件给上位机
+																	PacketReportKeyEventTypeDef pkt;
+																	pkt.key_id = KEY_HOME;   // 值为 0x3A，或直接使用 0x3A
+																	pkt.event = 1;           // 按下事件
+																	uart_packet_send(PKT_FUNC_KEY, &pkt, sizeof(pkt));
+																	rt_kprintf("[Button] HOME pressed, send KEY_HOME to host\n");
+															}
                             break;
  
 												case BUTTON_ID_SW5:

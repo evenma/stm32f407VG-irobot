@@ -27,6 +27,8 @@ int asr_action_init(void);
 
 void asr_action_speak_state(uint8_t talk_id);
 void asr_action_set_single_mode(rt_bool_t enable);
+
+void robot_auto_charge(void);
 /**
  * @brief 获取当前是否为单机模式
  * @return RT_TRUE 单机模式，RT_FALSE 正常模式

@@ -32,6 +32,7 @@
     #include "ultrasonic_485.h"
 #endif
 
+struct rt_event g_stop_evt;  
 
 /* 线程栈大小和优先级 */
 #define ASR_ACTION_THREAD_STACK_SIZE   2048
@@ -69,6 +70,8 @@ typedef enum {
 
 #define BASE_SPEED      10      // 基础直行速度 (rpm)
 #define MAX_SPEED       15      // 最大速度限制
+
+static rt_thread_t charge_thread = RT_NULL;  // 回充电座充电线程
 
 /* 线程入口函数声明 */
 static void asr_action_thread_entry(void *parameter);
@@ -426,10 +429,23 @@ static void robot_simple_turn_right(void)
     }	
 }
 
-static void robot_auto_charge(void)
+/* 等待事件（超时或手动停止） */
+static int wait_stop_or_timeout(rt_int32_t timeout_ticks)
+{
+    rt_uint32_t recv_evt;
+    rt_err_t ret = rt_event_recv(&g_stop_evt, EVENT_STOP, RT_EVENT_FLAG_OR | RT_EVENT_FLAG_CLEAR,
+                                 timeout_ticks, &recv_evt);
+    if (ret == RT_EOK) {
+        rt_kprintf("DEBUG: stop event received\n");
+        return -1;
+    }
+    return 0;        // 超时
+}
+
+static void auto_charge_thread_entry(void *param)
 {
     rt_kprintf("[ASR] Auto charge start\n");
-    
+ 		rt_uint32_t recv_evt;   
     /* 1. 释放抱闸，使能电机，进入速度模式 */
     car_action_send_cmd(CAR_CMD_MOVE_START, 0);
     rt_thread_mdelay(100);
@@ -439,7 +455,7 @@ static void robot_auto_charge(void)
     rt_bool_t timeout = RT_FALSE;
     rt_tick_t aligned_start = 0;
     
-    while (1) {
+    while (1) {				
         /* 超时检测（60秒）*/
         if (rt_tick_get_millisecond() - start_tick > 60000) {
             rt_kprintf("[ASR] Auto charge timeout\n");
@@ -450,7 +466,11 @@ static void robot_auto_charge(void)
         /* 安全检测（前方障碍物）*/
         if (!is_safe_to_move(MOVE_DIR_FORWARD)) {
             car_action_send_cmd(CAR_CMD_SET_VEL, CAR_PACK_VEL(0, 0));
-            rt_thread_mdelay(200);
+//            rt_thread_mdelay(200);
+						if(wait_stop_or_timeout(rt_tick_from_millisecond(200)) != 0 ){
+								rt_kprintf("[ASR] Stop event received, exit auto charge\n");
+								break;  // 收到停止命令，退出线程				
+						}
             continue;
         }
 
@@ -465,7 +485,11 @@ static void robot_auto_charge(void)
         if (!is_ir_valid()) {
             rt_kprintf("[ASR] IR invalid (no upper beam), stop and retry\n");
             car_action_send_cmd(CAR_CMD_SET_VEL, CAR_PACK_VEL(0, 0));
-            rt_thread_mdelay(200);
+//            rt_thread_mdelay(200);
+						if(wait_stop_or_timeout(rt_tick_from_millisecond(200)) != 0 ){
+								rt_kprintf("[ASR] Stop event received, exit auto charge\n");
+								break;  // 收到停止命令，退出线程				
+						}
             aligned_start = 0;
             continue;
         }
@@ -483,12 +507,20 @@ static void robot_auto_charge(void)
                 rt_kprintf("[ASR] Aligned for 2 seconds, waiting for voltage\n");
                 // 继续以低速度前进，同时保持检测充电电压
                 car_action_send_cmd(CAR_CMD_SET_VEL, CAR_PACK_VEL(5, 5));
-                rt_thread_mdelay(100);
+//                rt_thread_mdelay(100);
+								if(wait_stop_or_timeout(rt_tick_from_millisecond(100)) != 0 ){
+										rt_kprintf("[ASR] Stop event received, exit auto charge\n");
+										break;  // 收到停止命令，退出线程				
+								}
                 continue;  // 回到循环顶部检测电压
             }
             // 未达到持续时间，继续直行
             car_action_send_cmd(CAR_CMD_SET_VEL, CAR_PACK_VEL(BASE_SPEED, BASE_SPEED));
-            rt_thread_mdelay(50);
+//            rt_thread_mdelay(50);
+						if(wait_stop_or_timeout(rt_tick_from_millisecond(50)) != 0 ){
+								rt_kprintf("[ASR] Stop event received, exit auto charge\n");
+								break;  // 收到停止命令，退出线程				
+						}
             continue;
         } else {
             aligned_start = 0;
@@ -502,7 +534,12 @@ static void robot_auto_charge(void)
                    ir_get_left_status(), ir_get_right_status(), left_spd, right_spd);
         
         car_action_send_cmd(CAR_CMD_SET_VEL, CAR_PACK_VEL(left_spd, right_spd));
-        rt_thread_mdelay(100);
+				
+//        rt_thread_mdelay(100);
+				if(wait_stop_or_timeout(rt_tick_from_millisecond(100)) != 0 ){
+            rt_kprintf("[ASR] Stop event received, exit auto charge\n");
+            break;  // 收到停止命令，退出线程				
+				}
     }
     
     /* 停止运动 */
@@ -518,7 +555,33 @@ static void robot_auto_charge(void)
         asr_speak(ASR_TYPE_ANNOUNCER, TALK_CANNOT_CHARGE);
     } else {
         rt_kprintf("[ASR] Auto charge failed\n");
-        asr_speak(ASR_TYPE_ANNOUNCER, TALK_CANNOT_CHARGE);
+//        asr_speak(ASR_TYPE_ANNOUNCER, TALK_CANNOT_CHARGE);
+    }
+		charge_thread = RT_NULL;   // 直接置空
+		return;
+}
+
+void robot_auto_charge(void)
+{
+    if (charge_thread != RT_NULL) {
+        rt_kprintf("[ASR] Auto charge already running\n");
+        return;
+    }
+		rt_thread_mdelay(5);
+		rt_uint32_t dummy;
+		rt_event_recv(&g_stop_evt, 0xFFFFFFFF, RT_EVENT_FLAG_OR | RT_EVENT_FLAG_CLEAR,
+                  RT_WAITING_NO, &dummy);
+		
+    charge_thread = rt_thread_create("charge",
+                                     auto_charge_thread_entry,
+                                     RT_NULL,
+                                     2048,  
+                                     25,   
+                                     10);
+    if (charge_thread != RT_NULL) {
+        rt_thread_startup(charge_thread);
+    } else {
+        rt_kprintf("[ASR] Failed to create charge thread\n");
     }
 }
 
@@ -552,8 +615,9 @@ static void execute_action(uint8_t cmd_id)
             } 
             break;
         case CMD_STOP:
-		    robot_simple_stop();   // 如果电机在运行 
-			user_action_stop();   //如果马桶功能在使用
+					rt_event_send(&g_stop_evt, EVENT_STOP); // 如果是单机模式并且是go HOME动作线程
+					robot_simple_stop();   // 如果电机在运行 
+					user_action_stop();   //如果马桶功能在使用
             break;
         case CMD_SPEED_UP:
             /* 速度调节，单机模式不支持速度调节*/
@@ -737,7 +801,7 @@ static void asr_action_thread_entry(void *parameter)
 int asr_action_init(void)
 {
     rt_thread_t tid;
-
+		rt_event_init(&g_stop_evt, "charge_evt", RT_IPC_FLAG_FIFO);
     tid = rt_thread_create("asr_act",
                            asr_action_thread_entry,
                            RT_NULL,

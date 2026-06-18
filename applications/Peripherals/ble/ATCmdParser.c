@@ -25,20 +25,16 @@
  */
 
 #include "ATCmdParser.h"
-#include "at_serial.h"
+#include "ble_serial.h"
 #include "mx_common.h"
 #include "rtthread.h"
 #include <stdio.h>
+#include "global_conf.h"
 
-#ifndef ULOG_USING_SYSLOG
-#define LOG_TAG              "cmdParser"
-#define LOG_LVL              LOG_LVL_DBG
+#define LOG_TAG "at_parse"
+#define LOG_LVL LOG_LVL_INFO //LOG_LVL_DBG
 #include <ulog.h>
-#else
-#include <syslog.h>
-#endif /* ULOG_USING_SYSLOG */
 
-extern rt_uint8_t enableDebug;
 /******************************************************************************
  *                                 Constants
  ******************************************************************************/
@@ -55,6 +51,7 @@ static int _output_delim_size;
 static const char* _input_delimiter;
 static int _input_delim_size;
 static char at_mode=0;
+static int  _timeout = 100;   // 默认100ms
 
 /******************************************************************************
  *                              Function Definitions
@@ -108,10 +105,11 @@ restart:
         // derails us.
         int j = 0, dummy = 0;
         int dummy_pos[20];
-		rt_thread_delay(10);
+//		rt_thread_delay(10);
         while (true) {
             // Receive next character
-            int c = at_serial_getc();
+            int c = ble_serial_getc_timeout(100);
+//					int c = ble_serial_getc_nowait();					
             if (c < 0) {
 if(enableDebug){
 							LOG_D("AT(Timeout)");
@@ -132,24 +130,24 @@ if(enableDebug){
             AT_buffer[offset + j++] = c;
             AT_buffer[offset + j] = 0;
 
-            struct oob* oob = AT_oobs;
-            // Check for oob data
-            for (; oob; oob = (struct oob*)oob->next) {
-                if ((unsigned)j == oob->len && memcmp(oob->prefix, AT_buffer + offset, oob->len) == 0) {
-if(enableDebug){
-									LOG_D("AT! %s", oob->prefix);
-}
-					oob->cb();
+//            struct oob* oob = AT_oobs;
+//            // Check for oob data
+//            for (; oob; oob = (struct oob*)oob->next) {
+//                if ((unsigned)j == oob->len && memcmp(oob->prefix, AT_buffer + offset, oob->len) == 0) {
+//if(enableDebug){
+//									LOG_D("AT! %s", oob->prefix);
+//}
+//					oob->cb();
 
-                    if (_aborted) {
-						LOG_D("AT(Aborted)");
-                        return false;
-                    }
-                    // oob may have corrupted non-reentrant buffer,
-                    // so we need to set it up again
-                    goto restart;
-                }
-            }
+//                    if (_aborted) {
+//						LOG_D("AT(Aborted)");
+//                        return false;
+//                    }
+//                    // oob may have corrupted non-reentrant buffer,
+//                    // so we need to set it up again
+//                    goto restart;
+//                }
+//            }
 
             // Check for match
             int count = -1;
@@ -203,8 +201,8 @@ if(enableDebug){
 // Command parsing with line handling
 bool ATCmdParser_vsend(const char* command, va_list args)
 {
-    while (ATCmdParser_process_oob())
-        ;
+//	while (ATCmdParser_process_oob())
+//			;
 //		rt_kprintf(">>>>>>>>>>>\r\n");
     // Create and send command
     if (vsprintf(AT_buffer, command, args) < 0) {
@@ -212,13 +210,13 @@ bool ATCmdParser_vsend(const char* command, va_list args)
     }
 
     for (int i = 0; AT_buffer[i]; i++) {
-        if (at_serial_putc(AT_buffer[i]) < 0) {
+        if (ble_serial_putc(AT_buffer[i]) < 0) {
             return false;
         }
     }
     // Finish with newline
     for (size_t i = 0; _output_delimiter[i]; i++) {
-        if (at_serial_putc(_output_delimiter[i]) < 0) {
+        if (ble_serial_putc(_output_delimiter[i]) < 0) {
             return false;
         }
     }
@@ -232,15 +230,15 @@ bool ATCmdParser_vsend(const char* command, va_list args)
 // 不带回车换行
 bool ATCmdParser_vsend_start(const char* command, va_list args)
 {
-    while (ATCmdParser_process_oob())
-        ;
+//    while (ATCmdParser_process_oob())
+//        ;
     // Create and send command
     if (vsprintf(AT_buffer, command, args) < 0) {
         return false;
     }
 
     for (int i = 0; AT_buffer[i]; i++) {
-        if (at_serial_putc(AT_buffer[i]) < 0) {
+        if (ble_serial_putc(AT_buffer[i]) < 0) {
             return false;
         }
     }
@@ -255,7 +253,7 @@ bool ATCmdParse_vsendEnd(void)
 {
     // Finish with newline
     for (size_t i = 0; _output_delimiter[i]; i++) {
-        if (at_serial_putc(_output_delimiter[i]) < 0) {
+        if (ble_serial_putc(_output_delimiter[i]) < 0) {
             return false;
         }
     }
@@ -294,7 +292,7 @@ int ATCmdParser_write(const char* data, int size)
 {
     int i = 0;
     for (; i < size; i++) {
-        if (at_serial_putc(data[i]) < 0) {
+        if (ble_serial_putc(data[i]) < 0) {
             return -1;
         }
         //rt_thread_delay(1);
@@ -306,7 +304,7 @@ int ATCmdParser_read(char* data, int size)
 {
     int i = 0;
     for (; i < size; i++) {
-        int c = at_serial_getc();
+        int c = ble_serial_getc_timeout(_timeout);
         if (c < 0) {
             return -1;
         }
@@ -342,15 +340,11 @@ bool ATCmdParser_process_oob(void)
 		if(at_mode){
 			return false;
 		}
-	
-    if (!at_serial_readable()) {
-        return false;
-    }
 
     int i = 0;
     while (true) {
         // Receive next character
-        int c = at_serial_getc();
+        int c = ble_serial_getc_timeout(100);
         if (c < 0) {
             return false;
         }
@@ -362,7 +356,7 @@ bool ATCmdParser_process_oob(void)
         while (oob) {
             if (i == (int)oob->len && memcmp(oob->prefix, AT_buffer, oob->len) == 0) {
 							if(enableDebug){
-				LOG_D("AT! %s", oob->prefix);
+				LOG_D("OOB! %s", oob->prefix);
 							}
                 oob->cb();
                 return true;
@@ -418,11 +412,6 @@ if(enableDebug){
     return arg_num;
 }
 
-void ATCmdParser_set_timeout(int timeout)
-{
-    at_serial_set_timeout(timeout);
-}
-
 void ATCmdParser_init(const char* output_delimiter, const char* input_delimiter, int timeout)
 {
     _output_delimiter = output_delimiter;
@@ -431,5 +420,6 @@ void ATCmdParser_init(const char* output_delimiter, const char* input_delimiter,
     _input_delimiter = input_delimiter;
     _input_delim_size = strlen(input_delimiter);
 
-    at_serial_init(timeout);
+    ble_serial_init("uart5", timeout); 
+		_timeout = timeout;
 }

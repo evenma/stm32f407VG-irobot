@@ -150,6 +150,20 @@ uint16_t checksum_crc16(const uint8_t *buf, uint16_t len)
     return check;
 }
 
+uint16_t checksum_crc16_update(uint16_t crc, const uint8_t *data, uint16_t len)
+{
+    uint8_t crc_high = crc >> 8;
+    uint8_t crc_low = crc & 0xFF;
+    int index;
+
+    while (len--) {
+        index = crc_high ^ (*data++);
+        crc_high = crc_low ^ crc16_h_table[index];
+        crc_low = crc16_l_table[index];
+    }
+
+    return (crc_high << 8) | crc_low;
+}
 
 /**
  * @}

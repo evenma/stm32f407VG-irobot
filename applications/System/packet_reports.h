@@ -16,6 +16,8 @@
 #define SYS_SUB_CLIFF             0x03
 #define SYS_SUB_BATTERY_EVENT     0x04
 #define SYS_SUB_IR_SWITCH         0x05   // 红外对射管开关量
+#define SYS_SUB_REBOOT         		0x10      // 重启命令
+#define SYS_SUB_CMD_ACK         0x20   // 通用命令确认
 
 // 子命令定义（PKT_FUNC_TOILET）
 #define TOILET_SUB_WATER_LEVEL    0x01
@@ -29,6 +31,14 @@
 #define MOTOR_SUB_FAULT             0x04   // 故障码（事件）
 #define MOTOR_SUB_ONLINE            0x05   // 在线/离线状态变化（事件）
 #define MOTOR_SUB_STATUSWORD        0x06   // 状态字（调试用，可选）
+
+// OTA 子命令 (功能号 PKT_FUNC_OTA)
+#define OTA_CMD_START       0x01   // 开始传输
+#define OTA_CMD_DATA        0x02   // 数据包
+#define OTA_CMD_END         0x03   // 结束传输
+#define OTA_CMD_GET_VERSION 0x04   // 查询版本号
+#define OTA_RSP_ACK         0x10   // 应答成功
+#define OTA_RSP_NAK         0x11   // 应答失败
 
 #pragma pack(1)
 typedef union  {

@@ -2,6 +2,7 @@
 #include "checksum.h"
 #include <rtdevice.h>
 #include <string.h>
+#include "packet_reports.h"
 
 /* ---------------------------- 硬件配置 ---------------------------- */
 #define UART_DEV_NAME       "uart2"         /* 与上位机通信的串口设备名称 */
@@ -41,7 +42,14 @@ static rt_device_t s_uart_dev = RT_NULL;
 static rt_mp_t s_frame_mp = RT_NULL;   /* 帧内存池 */
 
 /* ---------------------------- 协议辅助函数 ---------------------------- */
-
+static void send_command_ack(uint8_t func, uint8_t status)
+{
+    uint8_t data[3];
+    data[0] = SYS_SUB_CMD_ACK;   // 子命令：ACK
+    data[1] = func;              // 原功能号
+    data[2] = status;            // 0=成功, 非0=错误码
+    uart_packet_send(PKT_FUNC_SYS, data, sizeof(data));
+}
 /* ---------------------------- 串口接收回调 ---------------------------- */
 /* 串口接收完成中断回调（非 DMA 模式下可用，这里使用 DMA 时需要特殊处理）*/
 /* 由于我们在 Kconfig 中启用了 UART2 RX DMA，RT-Thread 串口驱动会在 DMA 收到数据后
@@ -119,6 +127,10 @@ static void rx_thread_entry(void *param)
 							if (s_frame.func < PKT_FUNC_NONE && s_callbacks[s_frame.func] != RT_NULL) {
 								s_callbacks[s_frame.func](&s_frame);
 							}
+							
+							 if (s_frame.func != PKT_FUNC_OTA) {
+										send_command_ack(s_frame.func, 0);   // 0 表示成功
+								}
 						}
 						/* 重置状态机 */
 						memset(&s_frame, 0, sizeof(s_frame));

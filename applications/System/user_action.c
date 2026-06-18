@@ -307,14 +307,14 @@ static void action_clean_common(CleanMode_t mode, uint16_t target_pos, uint8_t d
 					// 根据当前运动方向计算下一位置
 					if (forward) {
 							new_pos = current_pos + step;
-							if (new_pos > target_pos + step) {
+							if (new_pos >= target_pos + step) {
 									// 超过上限，反向
 									new_pos = target_pos + step - (new_pos - (target_pos + step));
 									forward = RT_FALSE;
 							}
 					} else {
 							new_pos = current_pos - step;
-							if (new_pos < target_pos - step) {
+							if (new_pos <= target_pos - step) {
 									// 超过下限，反向
 									new_pos = target_pos - step - (new_pos - (target_pos - step));
 									forward = RT_TRUE;
@@ -1028,7 +1028,7 @@ void cmd_set_pump_duty(int duty)
     if (duty > 100) duty = 100;
 		g_action_cfg.small_pump_duty = (rt_uint8_t)duty;
 		wc_small_pump_set_duty(g_action_cfg.small_pump_duty);
-		wc_small_pump_enable(RT_TRUE);
+//		wc_small_pump_enable(RT_TRUE);
     rt_kprintf("[CMD] Set small pump duty to %d\n", duty);
 }
 

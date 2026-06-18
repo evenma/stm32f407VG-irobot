@@ -13,6 +13,8 @@
 #include "user_action.h"
 #include "zltech_can_motor.h"
 #include "wc_drv.h"
+#include <fal.h>
+#include "checksum.h"
 
 #pragma pack(1)
 /* 定义各种命令结构体（与原代码相同）*/
@@ -106,6 +108,44 @@ extern char oled_l4[];
 #ifndef CAR_PACK_PARAM
 #define CAR_PACK_PARAM(low16, high16)  (((uint32_t)(high16) << 16) | ((uint32_t)(low16) & 0xFFFF))
 #endif
+
+
+extern rt_device_t wdg_dev;
+#define OTA_PAYLOAD_SIZE    250     // 每个数据包最大数据长度
+static uint16_t ota_file_crc16 = 0xFFFF;   // CRC16 初始值
+static const struct fal_partition *ota_dl_part = NULL;
+static uint8_t ota_state = 0;               // 0=空闲, 1=接收中, 2=完成
+static uint16_t ota_total_packets = 0;
+static uint32_t ota_received_bytes = 0;
+static uint16_t ota_next_seq = 1;           // 期望的下一个包序号（从1开始）
+
+static void send_ota_response(uint8_t sub_cmd, uint16_t seq, uint8_t status)
+{
+    uint8_t data[4];
+    data[0] = sub_cmd;
+    data[1] = seq & 0xFF;
+    data[2] = (seq >> 8) & 0xFF;
+    data[3] = status;
+    uart_packet_send(PKT_FUNC_OTA, data, 4);
+}
+
+static void send_version_response(void)
+{
+    uint8_t buf[64];
+    uint8_t hw_len = strlen(HARDWARE_VERSION_STR);
+    uint8_t sw_len = strlen(SOFTWARE_VERSION_STR);
+    uint8_t offset = 0;
+
+    buf[offset++] = OTA_CMD_GET_VERSION;   // 子命令
+    buf[offset++] = hw_len;
+    memcpy(&buf[offset], HARDWARE_VERSION_STR, hw_len);
+    offset += hw_len;
+    buf[offset++] = sw_len;
+    memcpy(&buf[offset], SOFTWARE_VERSION_STR, sw_len);
+    offset += sw_len;
+
+    uart_packet_send(PKT_FUNC_OTA, buf, offset);
+}
 
 /* ========== 命令回调函数（与 uart_packet 注册）========== */
 static void packet_led_handle(pkt_frame_t *frame)
@@ -290,11 +330,31 @@ static void packet_motor_handle(pkt_frame_t *frame)
     }
 }
 
-static void packet_battery_limit_handle(pkt_frame_t *frame)
+static void packet_sys_handle(pkt_frame_t *frame)
 {
-    BatteryWarnTypeDef *cmd = (BatteryWarnTypeDef*)frame->data_and_checksum;
-    if(cmd->cmd == 1) {
-        change_battery_limit(cmd->limit);
+    uint8_t *data = frame->data_and_checksum;
+    if (frame->data_len < 1) return;
+
+    uint8_t sub_cmd = data[0];
+
+    switch (sub_cmd) {
+        case 1:  // 电池报警设置（原功能）
+            if (frame->data_len >= 3) {  // cmd + limit(2)
+                BatteryWarnTypeDef *cmd = (BatteryWarnTypeDef*)data;
+                change_battery_limit(cmd->limit);
+            }
+            break;
+
+        case SYS_SUB_REBOOT:
+            rt_kprintf("[SYS] Reboot command received, system will restart in 1s...\n");
+            // 延迟 1 秒后重启
+            rt_thread_delay(RT_TICK_PER_SECOND);
+            rt_hw_cpu_reset();
+            break;
+
+        default:
+            rt_kprintf("[SYS] Unknown sub_cmd: 0x%02X\n", sub_cmd);
+            break;
     }
 }
 
@@ -537,19 +597,155 @@ static void packet_toilet_handle(pkt_frame_t *frame)
     }
 }
 
+
+static void packet_ota_handle(pkt_frame_t *frame)
+{
+    uint8_t *data = frame->data_and_checksum;
+    if (frame->data_len < 1) return;
+
+    uint8_t sub_cmd = data[0];
+
+    switch (sub_cmd) {
+				case OTA_CMD_GET_VERSION:
+						send_version_response();
+						break;
+        case OTA_CMD_START: {
+            // 格式: 子命令(1) + 总包数(2) + 文件大小(4) + 校验类型(1)
+            if (frame->data_len < 8) {
+                rt_kprintf("OTA: START packet too short\n");
+                return;
+            }
+            uint16_t total_packets = data[1] | (data[2] << 8);
+            // uint32_t total_size = data[3] | (data[4]<<8) | (data[5]<<16) | (data[6]<<24);
+            // uint8_t check_type = data[7];
+
+            if (ota_dl_part == NULL) {
+                ota_dl_part = fal_partition_find("download");
+                if (ota_dl_part == NULL) {
+                    rt_kprintf("OTA: download partition not found\n");
+                    send_ota_response(OTA_RSP_NAK, 0, 1);
+                    return;
+                }
+            }
+
+            // 擦除整个分区
+            rt_kprintf("OTA: Erasing download partition (size %d)\n", ota_dl_part->len);
+						if (wdg_dev) rt_device_control(wdg_dev, RT_DEVICE_CTRL_WDT_KEEPALIVE, NULL);
+            if (fal_partition_erase(ota_dl_part, 0, ota_dl_part->len) < 0) {
+                rt_kprintf("OTA: Erase failed\n");
+                send_ota_response(OTA_RSP_NAK, 0, 2);
+                return;
+            }
+						if (wdg_dev) rt_device_control(wdg_dev, RT_DEVICE_CTRL_WDT_KEEPALIVE, NULL);
+
+            // 初始化状态
+            ota_total_packets = total_packets;
+            ota_next_seq = 1;
+            ota_received_bytes = 0;
+            ota_file_crc16 = 0xFFFF;   // CRC 初始值
+            ota_state = 1;
+            rt_kprintf("OTA: Start receiving, total packets = %d\n", total_packets);
+            send_ota_response(OTA_RSP_ACK, 0, 0);
+            break;
+        }
+
+        case OTA_CMD_DATA: {
+            if (ota_state != 1) {
+                rt_kprintf("OTA: Not in receiving state\n");
+                return;
+            }
+            if (frame->data_len < 3) { // 子命令 + 2字节序号
+                rt_kprintf("OTA: DATA packet too short\n");
+                return;
+            }
+
+            uint16_t seq = data[1] | (data[2] << 8);
+            uint16_t payload_len = frame->data_len - 3; // 实际数据长度
+
+            if (payload_len > OTA_PAYLOAD_SIZE) {
+                rt_kprintf("OTA: Payload too large\n");
+                send_ota_response(OTA_RSP_NAK, seq, 5);
+                return;
+            }
+
+            // 检查序号
+            if (seq == ota_next_seq) {
+                // 写入分区
+                uint32_t offset = (seq - 1) * OTA_PAYLOAD_SIZE;
+                if (fal_partition_write(ota_dl_part, offset, &data[3], payload_len) < 0) {
+                    rt_kprintf("OTA: Write failed at seq %d\n", seq);
+                    send_ota_response(OTA_RSP_NAK, seq, 3);
+                    return;
+                }
+
+                // 更新 CRC
+                ota_file_crc16 = checksum_crc16_update(ota_file_crc16, &data[3], payload_len); // 需实现 crc32_update
+                ota_received_bytes += payload_len;
+                ota_next_seq++;
+                send_ota_response(OTA_RSP_ACK, seq, 0);
+
+                // 每写一个包喂狗一次（防止看门狗复位）
+                if (wdg_dev) {
+                    rt_device_control(wdg_dev, RT_DEVICE_CTRL_WDT_KEEPALIVE, NULL);
+                }
+            } else if (seq < ota_next_seq) {
+                // 重复包，回复 ACK
+                send_ota_response(OTA_RSP_ACK, seq, 0);
+            } else {
+                // 包序号跳跃（丢包），请求重发期望的序号
+                send_ota_response(OTA_RSP_NAK, ota_next_seq, 0);
+            }
+            break;
+        }
+
+        case OTA_CMD_END: {
+            if (ota_state != 1) {
+                rt_kprintf("OTA: Not in receiving state\n");
+                return;
+            }
+            if (frame->data_len < 3) {
+                rt_kprintf("OTA: END packet too short\n");
+                return;
+            }
+						uint16_t expected_crc = data[1] | (data[2] << 8);
+						uint16_t calc_crc = ota_file_crc16;  // 直接使用累积值
+
+            if (calc_crc  == expected_crc) {
+                rt_kprintf("OTA: CRC check passed (0x%04X)\n", expected_crc);
+                send_ota_response(OTA_RSP_ACK, 0, 0);
+                ota_state = 2;
+                rt_kprintf("OTA: Upgrade package received successfully.\n");
+                rt_kprintf("OTA: Please reboot to upgrade.\n");
+                // 可以在这里设置一个标志，或直接重启
+                // 上位机发送重启命令
+            } else {
+                rt_kprintf("OTA: CRC mismatch! expected=0x%04X, calc=0x%04X\n",
+                           expected_crc, calc_crc);
+                send_ota_response(OTA_RSP_NAK, 0, 4);
+                ota_state = 0; // 重置，允许重试
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
 /* ========== 初始化：向 uart_packet 注册所有回调 ========== */
 int packet_handle_init(void)
 {
     uart_packet_register_callback(PKT_FUNC_LED, packet_led_handle);
     uart_packet_register_callback(PKT_FUNC_BUZZER, packet_buzzer_handle);
     uart_packet_register_callback(PKT_FUNC_MOTOR, packet_motor_handle);
-    uart_packet_register_callback(PKT_FUNC_SYS, packet_battery_limit_handle);
+    uart_packet_register_callback(PKT_FUNC_SYS, packet_sys_handle);
 #if ENABLE_OLED
     uart_packet_register_callback(PKT_FUNC_OLED, packet_oled_handle);
 #endif
     uart_packet_register_callback(PKT_FUNC_LIGHT, packet_light_handle);
     uart_packet_register_callback(PKT_FUNC_CHARGER, packet_charger_handle);
 	uart_packet_register_callback(PKT_FUNC_TOILET, packet_toilet_handle);
+	uart_packet_register_callback(PKT_FUNC_OTA, packet_ota_handle);
     rt_kprintf("[PACKET] Handle registered to uart_packet\n");
 	return RT_EOK;
 }

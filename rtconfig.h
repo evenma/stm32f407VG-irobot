@@ -214,14 +214,15 @@
 #define ULOG_LINE_BUF_SIZE 128
 
 /* log format */
-
+#define ULOG_USING_COLOR
 #define ULOG_OUTPUT_TIME
+// #undef ULOG_TIME_USING_TIMESTAMP
 #define ULOG_OUTPUT_LEVEL
 #define ULOG_OUTPUT_TAG
 /* end of log format */
 #define ULOG_BACKEND_USING_CONSOLE
-#define ULOG_USING_FILTER
-#define ULOG_USING_SYSLOG
+// #define ULOG_USING_FILTER
+// #define ULOG_USING_SYSLOG
 /* end of Utilities */
 
 /* Using USB legacy version */
