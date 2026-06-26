@@ -15,7 +15,6 @@
 #endif
 
 /* ======================== 线程配置 ======================== */
-
 #define IR_REPORT_THREAD_STACK_SIZE  1024
 #define IR_REPORT_THREAD_PRIORITY    18
 
@@ -23,8 +22,7 @@
 #define IR_EVENT_RIGHT  (1 << 1)
 
 /* ======================== 协议参数 ======================== */
-#define BIT_NOMINAL_US       1000		// 1ms/bit
-#define BIT_TOLERANCE_US     400		// +-0.4us容差
+#define BIT_TOLERANCE_US     200 //400		// +-0.4us容差
 #define MAX_CONSECUTIVE_BITS 12     // 7 15 15 3  = 11   最多补1的位数 
 #define SYMBOL_BITS          4			// 4bits一数据
 #define SYMBOL_COUNT         10			// 10数据一特征码
@@ -33,11 +31,21 @@
 #define FRAME_IDLE_TIMEOUT_MS 250   // 250ms 周期
 #define IR_RECIVE_TIMEOUT_MS 500     // 500ms超时未收到事件，清除上传数据
 
+#ifdef IR_CHARGE_VERSION_OLD
 /* 特征码 */
+#define BIT_NOMINAL_US       1000		// 1ms/bit
 static const uint8_t PATTERN_UP[SYMBOL_COUNT] =      {3,1,1,1,1,7,7,1,7,15};
 static const uint8_t PATTERN_LEFT[SYMBOL_COUNT] =    {3,1,1,1,1,7,7,1,1,15};
 static const uint8_t PATTERN_RIGHT[SYMBOL_COUNT] =   {15,3,1,1,1,1,7,7,1,1};
 static const uint8_t PATTERN_LR_FULL[SYMBOL_COUNT] = {3,1,1,1,1,1,7,1,1,1};
+#elif defined(IR_CHARGE_VERSION_NEW)
+// 新款ir充电座 采样0.5ms/bit
+#define BIT_NOMINAL_US       500 //新版0.5ms/bit  
+static const uint8_t PATTERN_UP[SYMBOL_COUNT] =      {3,1,1,1,7,1,7,1,7,15};    // 0x3111 7171 7f
+static const uint8_t PATTERN_LEFT[SYMBOL_COUNT] =    {3,1,1,1,1,7,1,7,1,15};   // 0x3111 1717 1f
+static const uint8_t PATTERN_RIGHT[SYMBOL_COUNT] =   {3,1,1,1,1,7,7,1,7,15};  // 0x3111 1771 7f
+static const uint8_t PATTERN_LR_FULL[SYMBOL_COUNT] = {3,1,1,1,1,7,1,1,1,15};   // 0x3111 1711 1f 
+#endif
 
 #define PATTERN_NUM 4
 static const uint8_t* PATTERNS[PATTERN_NUM] = {PATTERN_UP,PATTERN_LR_FULL, PATTERN_LEFT, PATTERN_RIGHT};
@@ -210,13 +218,14 @@ static void ir_edge_handler(IrDecoder_t *dec, uint8_t current_level)
 		pulse_width_us = 0;
 	}	
     uint32_t diff = pulse_width_us;
-    if (diff < 300){
+//    if (diff < 300){
+		if (diff < 100){
 			dec->last_level = current_level;
 			return;  // 防抖，去毛刺
 		} 
 
     // 计算连续相同电平的位数（四舍五入）
-    int bits = (diff + 500) / BIT_NOMINAL_US;   // 500 = BIT_NOMINAL_US/2 减少运算时间
+    int bits = (diff + BIT_NOMINAL_US/2) / BIT_NOMINAL_US;   // 500 = BIT_NOMINAL_US/2 减少运算时间
     if (bits < 1) bits = 1;    // [300,500)=1 或 [500,1500)=1
 //    if (bits > MAX_CONSECUTIVE_BITS) bits = MAX_CONSECUTIVE_BITS;  // 连续同一个电平,最大11个1
 
@@ -456,7 +465,7 @@ static void ir_report_thread(void *param)
 				reset_decoder(&s_left_decoder);
             }
             if (recv_evt & IR_EVENT_RIGHT) {
-											// 打印左通道原始符号数据（调试用）
+					// 打印右通道原始符号数据（调试用）
 //				rt_kprintf("[IR] Right frame symbols: ");
 //				for (int i = 0; i < s_right_decoder.buf_index; i++) {
 //						rt_kprintf("%d ", s_right_decoder.buffer[i]);

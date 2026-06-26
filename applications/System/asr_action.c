@@ -216,18 +216,18 @@ static rt_bool_t is_safe_to_move(MoveDirection_t dir)
     uint32_t dist[8] = {0};
     int sensor_count = 0;
 #ifdef ULTRASONIC_GPIO
-    hc_sr04_get_distances(dist, 8);
-    sensor_count = 8;
+    hc_sr04_get_distances(dist, HC_SR04_NUM);
+    sensor_count = HC_SR04_NUM;
 #else
-    ultrasonic_485_get_distances(dist, 7);
-    sensor_count = 7;
+    ultrasonic_485_get_distances(dist, ULTRASONIC_485_NUM);
+    sensor_count = ULTRASONIC_485_NUM;
 #endif
     
     switch (dir) {
         case MOVE_DIR_FORWARD:
-            // 检查前左(0)、前右(1)
-            if ((dist[0] > 0 && dist[0] < SAFE_DISTANCE_MM) ||
-                (dist[1] > 0 && dist[1] < SAFE_DISTANCE_MM)) {
+            // 检查前左(2)、前右(3)
+            if ((dist[2] > 0 && dist[2] < SAFE_DISTANCE_MM) ||
+                (dist[3] > 0 && dist[3] < SAFE_DISTANCE_MM)) {
                 rt_kprintf("[ASR] Obstacle ahead!\n");
                 alert_once(RT_TRUE, TALK_DETECT_DISTANCE);
                 return RT_FALSE;

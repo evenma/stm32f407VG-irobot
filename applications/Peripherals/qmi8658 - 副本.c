@@ -39,6 +39,7 @@
 #include "print_utils.h"
 #include "packet_reports.h"
 #include "uart_packet.h"
+#include "iic.h"
 /**
  * @brief Internal QMI8658 object instance
  */
@@ -297,54 +298,28 @@ void imu_send_stop_condition(void)
     rt_thread_mdelay(10);
 }
 
-//发送数据
-void IIC_send_byte(uint8_t txd)
-{
-    uint8_t i = 0;
-    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
-		rt_pin_write(IMU_SCL_PIN, PIN_LOW); //拉低时钟开始数据传输
-    for(i = 0; i < 8; i++) {
-				rt_pin_write(IMU_SDA_PIN, ((txd & 0x80) >> 7));
-				txd <<= 1;
-        rt_thread_delay(1);
-        rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-        rt_thread_delay(1); //发送数据
-        rt_pin_write(IMU_SCL_PIN, PIN_LOW);
-        rt_thread_delay(1);
-    }
-}
-//终止信号
-void IIC_stop()		
-{
-    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_OUTPUT);
-    rt_pin_write(IMU_SCL_PIN, PIN_LOW);
-    rt_pin_write(IMU_SDA_PIN, PIN_LOW); //STOP:when CLK is high DATA change form low to high
-    rt_thread_delay(1);
-    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-    rt_pin_write(IMU_SDA_PIN, PIN_HIGH); //发送I2C总线结束信号
-    rt_thread_delay(1);
-}
-//等待从机应答信号
-//返回值：1 接收应答失败
-//		  0 接收应答成功
-uint8_t IIC_wait_ack()
-{
-    uint8_t tempTime = 0;
-    rt_pin_mode(IMU_SDA_PIN, PIN_MODE_INPUT);
-    rt_pin_write(IMU_SDA_PIN, PIN_HIGH);
-    rt_thread_delay(1);
-    rt_pin_write(IMU_SCL_PIN, PIN_HIGH);
-    rt_thread_delay(1);
+/***  软I2C  ******/
 
-    while(rt_pin_read(IMU_SDA_PIN)) {
-        tempTime++;
-        if(tempTime > 250) {
-            IIC_stop();
-            return 1;
-        }
-    }
-    rt_pin_write(IMU_SCL_PIN, PIN_LOW);
-    return 0;
+void write_reg(uint8_t reg,uint8_t value)
+{
+//    HAL_I2C_Mem_Write(&hi2c2, QMI8658_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, &value, 1, 0xFF);
+    IIC_WriteToMem(QMI8658_SLAVE_ADDR_H << 1, reg, &value, 1);
+}
+
+uint8_t read_reg(uint8_t reg)
+{
+	uint8_t ret=0;
+//    HAL_I2C_Mem_Read(&hi2c2, QMI8658_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, &ret, 1, 0xFF);
+    IIC_ReadFromMem(QMI8658_SLAVE_ADDR_H << 1, reg, &ret, 1);
+    return ret;
+}
+
+uint16_t readWord_reg(uint8_t reg)
+{
+	uint8_t ret[2]={0,0};
+//    HAL_I2C_Mem_Read(&hi2c2, QMI8658_ADDR << 1, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*)ret, 2, 0xFF);
+    IIC_ReadFromMem(QMI8658_SLAVE_ADDR_H << 1, reg, ret, 2);
+	return ((ret[1] << 8) | ret[0]);
 }
 /**
  * @brief 恢复 I2C 总线（当从机可能锁死时）
@@ -386,6 +361,43 @@ static void imu_recover_i2c_bus(void)
 
 }
 
+unsigned char get_id(void)
+{
+	unsigned char qmi8658_chip_id = 0x00;
+	unsigned char qmi8658_slave[2] = {QMI8658_SLAVE_ADDR_L, QMI8658_SLAVE_ADDR_H};
+	int retry = 0;
+	unsigned char iCount = 0;
+	while(iCount<2)
+	{
+		retry = 0;
+		while((qmi8658_chip_id != 0x05)&&(retry++ < 5))
+		{
+			qmi8658_chip_id = read_reg(QMI8658_REG_WHOAMI);
+			rt_kprintf("Qmi8658Register_WhoAmI = 0x%x\n", qmi8658_chip_id);
+		}
+		if(qmi8658_chip_id == 0x05)
+		{
+			rt_kprintf("success\n", qmi8658_chip_id);
+			break;
+		}
+		iCount++;
+	}
+
+	return qmi8658_chip_id;
+}
+
+unsigned char soft_iic(void)
+{
+	if(get_id() == 0x05)
+	{		
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+}
+/****************************************/
 
 /* ========== EXTI Interrupt Configuration ========== */
 
@@ -811,7 +823,7 @@ static rt_err_t imu_read_xyz(float acc[3], float gyro[3], uint8_t layout)
 			{
 				rt_hw_us_delay(10);
 				if(cnt < 1){
-					rt_kprintf("[QMI8658] Warning: ACC data not ready (0x%02X)\n", data_ready);
+//					rt_kprintf("[QMI8658] Warning: ACC data not ready (0x%02X)\n", data_ready);
 					acc[0] = s_imu.last_acc[0];
 					acc[1] = s_imu.last_acc[1];
 					acc[2] = s_imu.last_acc[2];
@@ -934,13 +946,11 @@ void qmi8658_imu_thread_entry(void* parameter)
 				pkt.element.gyro.x  = s_latest_data.gyro_x_deg;
 				pkt.element.gyro.y  = s_latest_data.gyro_y_deg;
 				pkt.element.gyro.z  = s_latest_data.gyro_z_deg;
-				
-				uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt)); //发送太频繁了。调试不方便。暂时关闭
-// 降频调试				
-//				if (++report_div >= 250) {  // 250Hz / 3 ≈ 83Hz
-//						report_div = 0;
-//						uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt));
-//				}
+				if (++report_div >= 250) {  // 250Hz / 3 ≈ 83Hz
+						report_div = 0;
+						uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt));
+				}
+//				uart_packet_send(PKT_FUNC_IMU, &pkt, sizeof(pkt)); 发送太频繁了。调试不方便。暂时关闭
 			}else{
         qmi8658_read_once(RT_NULL, &data);			
 				s_latest_data = data;		
@@ -1050,29 +1060,34 @@ rt_uint32_t qmi8658_create_imu_thread(void)
 int qmi8658_init(void)
 {
     rt_err_t err;
-    uint8_t rev_id;
+    uint8_t rev_id,cnt=0;
+		rt_device_t dev;
 		rt_thread_mdelay(500);		   
     rt_kprintf("\n========== QMI8658 v7.0 Init (Official Registers) ========== \n");
-		s_i2c_dev = (struct rt_i2c_bus_device*)rt_device_find(QMI8658_I2C_BUS);
-		if (s_i2c_dev == RT_NULL) {
+		soft_iic();
+		rt_thread_mdelay(100);
+		dev = rt_device_find(QMI8658_I2C_BUS);
+		if (dev == RT_NULL) {
 				rt_kprintf("[QMI8658] ERROR: I2C bus '%s' not found!\n", QMI8658_I2C_BUS);
 				return -RT_ERROR;
 		} else {
 				rt_kprintf("[QMI8658] I2C bus '%s' found.\n", QMI8658_I2C_BUS);
 		}		
-        if (rt_device_open(&s_i2c_dev->parent, RT_DEVICE_FLAG_RDWR) != RT_EOK) {
+        if (rt_device_open(dev, RT_DEVICE_FLAG_RDWR) != RT_EOK) {
             rt_kprintf("[QMI8658] ERROR: Failed to open I2C device!\n");
             return -RT_ERROR;
-        }   
+        }
+		s_i2c_dev = (struct rt_i2c_bus_device *)dev;				
 	 /* 发送一个停止条件，清除之前可能遗留的未完成传输 */			
 		imu_send_stop_condition();	
+
 				
     if(qmi8658_validate_connection(5) != RT_EOK)
     {
         rt_kprintf("[QMI8658] ERROR: Connection validation failed!\n");
 				BuzzerCommandTypeDef cmd = {100,100,8};
 				buzzer_start(&cmd);
-        return -RT_ERROR;
+				return -RT_ERROR;
     }
     // 灵敏度自调整 需要2-3S 上电启动开启自调整
 		qmi8658_self_calibrate();

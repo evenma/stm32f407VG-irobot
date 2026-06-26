@@ -769,16 +769,16 @@ void user_action_init(void)
                                         5);
 		wc_drv_init(); 
     /* 归零清洁杆和管路分配器：先走到最大行程，再回到零点，确保机械归零 */
-//		 rt_kprintf("[ACTION] Reset clean rod and pipe distributor to zero\n");
-//    wc_clean_rod_set_position(CLEAN_ROD_MAX_STEPS);
-//    rt_thread_mdelay(500);   // 等待到达最大位置
-//    wc_clean_rod_set_position(0);
-//    rt_thread_mdelay(500);
+		 rt_kprintf("[ACTION] Reset clean rod and pipe distributor to zero\n");
+    wc_clean_rod_set_position(CLEAN_ROD_MAX_STEPS);
+    rt_thread_mdelay(500);   // 等待到达最大位置
+    wc_clean_rod_set_position(0);
+    rt_thread_mdelay(500);
 
-//    wc_pipe_distributor_set_position(PIPE_POS_MAX);
-//    rt_thread_mdelay(500);
-//    wc_pipe_distributor_set_position(0);
-//    rt_thread_mdelay(500);
+    wc_pipe_distributor_set_position(PIPE_POS_MAX);
+    rt_thread_mdelay(500);
+    wc_pipe_distributor_set_position(0);
+    rt_thread_mdelay(500);
 		
 		if (s_action_thread != RT_NULL) {
         rt_thread_startup(s_action_thread);

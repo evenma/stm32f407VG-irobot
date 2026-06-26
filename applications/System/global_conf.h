@@ -22,12 +22,21 @@
 #define APP_VERSION_MAJOR         1
 #define APP_VERSION_MINOR         0
 #define APP_VERSION_PATCH         2
-#define APP_VERSION_STRING        "1.0.6"
+#define APP_VERSION_STRING        "1.0.7"
 
 #define SOFTWARE_VERSION_STR 			APP_VERSION_STRING
 #define HARDWARE_VERSION_STR 			"HW_1.0"
 
 extern rt_uint8_t enableDebug;
+
+#define ULTRASONIC_485            // 使用 RS485 方案（实际项目）
+//#define ULTRASONIC_GPIO         // 使用 hc138+hc125+hc32 方案
+// 超声波最大传感器数量
+#define HC_SR04_NUM               8
+#define ULTRASONIC_485_NUM     		8  //7
+
+//#define IR_CHARGE_VERSION_OLD				// CH2118 21.09
+#define IR_CHARGE_VERSION_NEW     // 新版充电座 ecovucs CH2405 24.10
 
 /* ========== ADC Device Name ========== */
 #define ADC_DEV_NAME                "adc1"
@@ -110,8 +119,7 @@ enum adc1_channel {
  *   - ULTRASONIC_485: 防水型 RS485 超声波（7 个级联）- 实际项目方案
  *   - ULTRASONIC_GPIO: 普通 HC-SR04 超声波（5 个 GPIO 控制 pc7,pc8,pc9=hc138+hc125 pa1=trig脉冲 + hc32 pc6=echo中断）
  */
-//#define ULTRASONIC_485            // 使用 RS485 方案（实际项目）
-#define ULTRASONIC_GPIO         // 使用 hc138+hc125+hc32 方案
+
 /* ======================== RS485 超声波配置 ======================== */
 
 /**
@@ -138,9 +146,7 @@ enum adc1_channel {
 #define ULTRASONIC_ECHO_PIN       GET_PIN(C, 6)     // Echo 输入（中断）
 // 定时器选择（TIM3 通道无特殊要求，仅作基本定时）
 #define ULTRASONIC_TIMER          TIM3
-// 最大传感器数量
-#define HC_SR04_NUM               8
-#define ULTRASONIC_485_NUM     		7
+
 // 单个传感器超时时间（ms）基本在32ms
 #define HC_SR04_TIMEOUT_MS        50
 /* 单个传感器超时时间（ms），需大于传感器最大响应时间 (处理值响应时间 320～750ms) */

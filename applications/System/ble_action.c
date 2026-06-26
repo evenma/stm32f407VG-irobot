@@ -25,7 +25,7 @@ extern struct rt_event g_stop_evt;   // asr_action
 #define BLE_RX_STACK_SIZE 2048
 #define BLE_RX_PRIORITY   10
 
-static rt_bool_t ble_connected = RT_FALSE;
+rt_bool_t ble_connected = RT_FALSE;
 static rt_bool_t free_mode = RT_FALSE;
 static rt_bool_t clean_mode = RT_FALSE;		
 static rt_uint8_t clean_strength = 2;	
@@ -66,17 +66,19 @@ static rt_err_t ble_set_slave_mode(void)
     uint8_t mode;
     int retry = 3;
     
-    /* Check current mode */
+    /* Check current mode 
+			Bit0:BLE 从机使能 Bit2:BLE 主机使能 默认值：01
+	*/
     mode = at_module_get_MASTER();
-	LOG_D("mode=%d",mode);
-	if(!mode){
+	LOG_D("mode=%x",mode);
+	if(mode == 0x01){
 			LOG_D("Already in slave mode");
 			return RT_EOK;
 	}
 
     /* Set master mode */
     while (retry--) {
-        if (at_module_set_MASTER(0) == kNoErr) {
+        if (at_module_set_MASTER(0x01) == kNoErr) {
             LOG_D("Slave mode set, module will reboot...");
             /* Module reboots automatically, wait for it */
             rt_thread_mdelay(1500);
@@ -120,10 +122,15 @@ static int ble_slave_init(void)
     }
 
     // 设置从机模式（默认可能是从机，但显式设置）
-//    if (ble_set_slave_mode() != RT_EOK) {
-//        LOG_E("Failed to set slave mode");
-//    }		
+    if (ble_set_slave_mode() != RT_EOK) {
+        LOG_E("Failed to set slave mode");
+    }		
 
+	 if (ble_connected) {
+			ATCmdParser_set_mode(0);
+        LOG_D("Already connected (auto-reconnect), skip AT init.");
+        return RT_EOK;   // 直接成功，不发送任何 AT 指令
+    }	
     // 设置蓝牙名称
 	if (ble_module_init() != kNoErr) {
         LOG_E("Failed to read module info");

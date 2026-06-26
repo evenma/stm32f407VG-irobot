@@ -681,70 +681,74 @@ static void render_ultrasonic_page(u8g2_t* u8g2)
     uint8_t y = 30;
     char buf[24];   // 足够大
 
-#ifdef ULTRASONIC_GPIO
+//#ifdef ULTRASONIC_GPIO
     uint32_t dist[8] = {0};
     hc_sr04_get_distances(dist, 8);
     // 第一行
     u8g2_DrawStr(u8g2, 8, y, "F:");
-    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
-    u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
-    u8g2_DrawStr(u8g2, 85, y, buf);
-    y += 10;
-    // 第二行
-    u8g2_DrawStr(u8g2, 8, y, "TS:");
     rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
     u8g2_DrawStr(u8g2, 35, y, buf);
     rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
     u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
-    // 第三行
-    u8g2_DrawStr(u8g2, 8, y, "BS:");
-    rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
+    // 第二行
+    u8g2_DrawStr(u8g2, 8, y, "L:");
+    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
     u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
+    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
     u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
-    // 第四行
+    // 第三行
     u8g2_DrawStr(u8g2, 8, y, "R:");
-    rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
-    u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[7] ? "%4dmm" : "---", dist[7]);
-    u8g2_DrawStr(u8g2, 85, y, buf);
-
-#elif defined(ULTRASONIC_485)
-    uint32_t dist[7] = {0};
-    ultrasonic_485_get_distances(dist, 7);
-    // 第一行
-    u8g2_DrawStr(u8g2, 8, y, "F:");
-    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
-    u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
-    u8g2_DrawStr(u8g2, 85, y, buf);
-    y += 10;
-    // 第二行
-    u8g2_DrawStr(u8g2, 8, y, "TS:");
-    rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
-    u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
-    u8g2_DrawStr(u8g2, 85, y, buf);
-    y += 10;
-    // 第三行
-    u8g2_DrawStr(u8g2, 8, y, "BS:");
     rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
     u8g2_DrawStr(u8g2, 35, y, buf);
     rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
     u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
     // 第四行（后方只有中间一个）
-    u8g2_DrawStr(u8g2, 8, y, "R:");
+    u8g2_DrawStr(u8g2, 8, y, "B:");
     rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
     u8g2_DrawStr(u8g2, 35, y, buf);
-    u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
+    rt_snprintf(buf, sizeof(buf), dist[7] ? "%4dmm" : "---", dist[7]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
 
-#else
-    u8g2_DrawStr(u8g2, 8, 30, "Ultrasonic: None");
-#endif
+//#elif defined(ULTRASONIC_485)
+//    uint32_t dist[7] = {0};
+//    ultrasonic_485_get_distances(dist, 7);
+//    // 第一行
+//    u8g2_DrawStr(u8g2, 8, y, "F:");
+//    rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
+//    u8g2_DrawStr(u8g2, 35, y, buf);
+//    rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
+//    u8g2_DrawStr(u8g2, 85, y, buf);
+//    y += 10;
+//    // 第二行
+//    u8g2_DrawStr(u8g2, 8, y, "L:");
+//    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
+//    u8g2_DrawStr(u8g2, 35, y, buf);
+//    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
+//    u8g2_DrawStr(u8g2, 85, y, buf);
+//    y += 10;
+//    // 第三行
+//    u8g2_DrawStr(u8g2, 8, y, "R:");
+//    rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
+//    u8g2_DrawStr(u8g2, 35, y, buf);
+//    rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
+//    u8g2_DrawStr(u8g2, 85, y, buf);
+//    y += 10;
+//    // 第四行（后方只有中间一个）
+//    u8g2_DrawStr(u8g2, 8, y, "B:");
+//    rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
+//    u8g2_DrawStr(u8g2, 35, y, buf);
+//		if(HC_SR04_NUM == 8){
+//			rt_snprintf(buf, sizeof(buf), dist[7] ? "%4dmm" : "---", dist[7]);
+//		}else{
+//			u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
+//		}
+
+//#else
+//    u8g2_DrawStr(u8g2, 8, 30, "Ultrasonic: None");
+//#endif
 }
 
 static void render_ultrasonic_485_page(u8g2_t* u8g2)
@@ -754,34 +758,39 @@ static void render_ultrasonic_485_page(u8g2_t* u8g2)
     uint8_t y = 30;
     char buf[24];   // 足够大
 
-    uint32_t dist[7] = {0};
-    ultrasonic_485_get_distances(dist, 7);
+    uint32_t dist[HC_SR04_NUM] = {0};
+    ultrasonic_485_get_distances(dist, HC_SR04_NUM);
+		
     // 第一行
     u8g2_DrawStr(u8g2, 8, y, "F:");
-    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
-    u8g2_DrawStr(u8g2, 35, y, buf);
-    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
-    u8g2_DrawStr(u8g2, 85, y, buf);
-    y += 10;
-    // 第二行
-    u8g2_DrawStr(u8g2, 8, y, "TS:");
     rt_snprintf(buf, sizeof(buf), dist[2] ? "%4dmm" : "---", dist[2]);
     u8g2_DrawStr(u8g2, 35, y, buf);
     rt_snprintf(buf, sizeof(buf), dist[3] ? "%4dmm" : "---", dist[3]);
     u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
+    // 第二行
+    u8g2_DrawStr(u8g2, 8, y, "L:");
+    rt_snprintf(buf, sizeof(buf), dist[1] ? "%4dmm" : "---", dist[1]);
+    u8g2_DrawStr(u8g2, 35, y, buf);
+    rt_snprintf(buf, sizeof(buf), dist[0] ? "%4dmm" : "---", dist[0]);
+    u8g2_DrawStr(u8g2, 85, y, buf);
+    y += 10;
     // 第三行
-    u8g2_DrawStr(u8g2, 8, y, "BS:");
+    u8g2_DrawStr(u8g2, 8, y, "R:");
     rt_snprintf(buf, sizeof(buf), dist[4] ? "%4dmm" : "---", dist[4]);
     u8g2_DrawStr(u8g2, 35, y, buf);
     rt_snprintf(buf, sizeof(buf), dist[5] ? "%4dmm" : "---", dist[5]);
     u8g2_DrawStr(u8g2, 85, y, buf);
     y += 10;
     // 第四行（后方只有中间一个）
-    u8g2_DrawStr(u8g2, 8, y, "R:");
+    u8g2_DrawStr(u8g2, 8, y, "B:");
     rt_snprintf(buf, sizeof(buf), dist[6] ? "%4dmm" : "---", dist[6]);
     u8g2_DrawStr(u8g2, 35, y, buf);
-    u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
+		if(HC_SR04_NUM == 8){
+			rt_snprintf(buf, sizeof(buf), dist[7] ? "%4dmm" : "---", dist[7]);
+		}else{
+			u8g2_DrawStr(u8g2, 85, y, "---");   // 右列留空
+		}
 }
 // 距离转换表（电压 mV -> 距离 mm），按电压从高到低排列
 typedef struct {

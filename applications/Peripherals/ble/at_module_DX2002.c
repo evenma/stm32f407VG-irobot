@@ -52,7 +52,7 @@ static char _ble_service_uuid[BLE_UUID_MAXLEN];
 static char _ble_notify_uuid[BLE_UUID_MAXLEN];
 static char _ble_write_uuid[BLE_UUID_MAXLEN];
 
-
+extern rt_bool_t ble_connected;
 
 /******************************************************************************
  *                             Function Declarations
@@ -127,6 +127,9 @@ restart:
 	if(at_module_get_fw_version() != RT_NULL){
 		LOG_D("version:%s",_fw_version);
 	}
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	
 	if(at_module_get_name() != RT_NULL){
 		LOG_D("ble name:%s",_ble_name);	
@@ -159,11 +162,17 @@ restart:
 			}
 		}
 	}
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	
 	if(at_module_get_addr() != RT_NULL){
 		LOG_D("mac:%s",_ble_mac);
 	}
 	rt_thread_delay(100);
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	cmd = at_module_get_name_MAC();	
 	switch(cmd)
 	{
@@ -173,6 +182,9 @@ restart:
 		default:break;
 	}
 	rt_thread_delay(100);
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	if(cmd!=2){
 		at_module_set_name_MAC(2);
 			// module auto reboot ,wait IM_READY
@@ -181,6 +193,9 @@ restart:
 				LOG_D("name:%s",_ble_name);
 		}	
 	}
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	
 	if(at_module_get_UART_BAUD() != BLE_BAUD){
 		LOG_D("SET BAUD 5:115200");
@@ -188,27 +203,43 @@ restart:
 		// module auto reboot ,wait IM_READY
 		rt_thread_delay(500);
 	}
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	
-//	cmd = at_module_get_notify(); //oxff²»ÊÇÊý×Ö
-//	if(cmd){
-//		LOG_D("Notifies the connection disconnection event");
-//	}else{
-//		LOG_D("Disconnection events are not notified");	
-//	}
-//	rt_thread_delay(100);
-	
+	cmd = at_module_get_notify();
+	LOG_D("notify status:%x",cmd);
+	if(cmd != 0xff){
+		at_module_set_notify(0xff);
+	}
+	rt_thread_delay(100);
+	if (ble_connected) {
+        return RT_EOK;   
+    }	
 	LOG_D("service uuid: %s",at_module_get_SERVICE_UUID());
 	rt_thread_delay(100);
+		if (ble_connected) {
+        return RT_EOK;   
+    }
 	LOG_D("notify uuid: %s",at_module_get_NOTIFY_UUID());
 	rt_thread_delay(100);
+		if (ble_connected) {
+        return RT_EOK;   
+    }
 	LOG_D("write uuid: %s",at_module_get_WRITE_UUID());
 	rt_thread_delay(100);
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	if(at_module_get_PWRM()){
 		LOG_D("Normal operating mode");
 	}else{
 		LOG_D("Automatic low power mode");	
 	}
 	rt_thread_delay(100);
+	if (ble_connected) {
+        return RT_EOK;   
+    }
 	LOG_D("Idle Indicates the low power consumption time: %d S",at_module_get_AST());
 	rt_thread_delay(100);
 	LOG_D("Module broadcast interval time: %d mS",at_module_get_ADVI());
@@ -383,7 +414,7 @@ uint8_t at_module_get_notify(void)
 	uint8_t i,param;
 	for(i=0;i<3;i++){
 		if ((ATCmdParser_send("AT+NOTI")
-       && ATCmdParser_recv("+NOTI=%d\r\n", &param))) {				 
+       && ATCmdParser_recv("+NOTI=%x\r\n", &param))) {				 
         return param;
     }
 	}
@@ -516,10 +547,9 @@ mx_status at_module_DEFAULT(void)
 
 mx_status at_module_set_MASTER(uint8_t param)
 {
-    if (param > 1) return kParamErr;
     uint8_t i;
     for (i = 0; i < 3; i++) {
-        if (ATCmdParser_send("AT+MASTER=%d", param) && ATCmdParser_recv("OK\r\n"))
+        if (ATCmdParser_send("AT+MASTER=%02X", param) && ATCmdParser_recv("OK\r\n"))
             return kNoErr;
         rt_thread_delay(100);
     }
@@ -555,7 +585,7 @@ uint8_t at_module_get_MASTER(void)
     uint8_t param;
     uint8_t i;
     for (i = 0; i < 3; i++) {
-        if (ATCmdParser_send("AT+MASTER") && ATCmdParser_recv("+MASTER=%d\r\n", &param)) {
+        if (ATCmdParser_send("AT+MASTER") && ATCmdParser_recv("+MASTER=%x\r\n", &param)) {
             return param;
         }
     }
@@ -579,7 +609,7 @@ mx_status at_module_set_notify(uint8_t param)
     if (param > 1) return kParamErr;
     uint8_t i;
     for (i = 0; i < 3; i++) {
-        if (ATCmdParser_send("AT+NOTI=%d", param) && ATCmdParser_recv("OK\r\n"))
+        if (ATCmdParser_send("AT+NOTI=%02X", param) && ATCmdParser_recv("OK\r\n"))
             return kNoErr;
         rt_thread_delay(100);
     }
